@@ -208,6 +208,19 @@ section.sec{padding-block:48px 8px;border-top:1px solid var(--line);display:grid
 .kv-guid li{color:var(--c-guid)}
 .kv-seq li{color:var(--muted)}
 .kv-seq li b{color:var(--c-date)}
+.ffbar{display:inline-flex;align-items:center;gap:8px}
+.tips{margin:0;padding-left:20px;display:grid;gap:8px;max-width:76ch;font-size:15px}
+.tips b{color:var(--ink)}
+.fw-card{display:grid;gap:14px}
+.fw-pages{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fw-page{display:grid;gap:6px;min-width:0}
+.fw-h{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.fw-h b{color:var(--ink)}
+.fw-box{display:flex;flex-direction:column;gap:2px;padding:4px;border:1.5px solid var(--line);border-radius:5px;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--line) 70%,transparent) 6px 7px);overflow:hidden}
+.fw-row{flex:none;display:flex;align-items:center;padding:0 8px;border-radius:3px;background:color-mix(in srgb,var(--c-str) 30%,var(--surface));font:12px var(--f-mono);overflow:hidden;white-space:nowrap;transition:background .2s,outline-color .2s;outline:2px solid transparent;outline-offset:-1px}
+.fw-row.moved{background:color-mix(in srgb,var(--c-guid) 35%,var(--surface))}
+.fw-row.stub{background:var(--surface);border:1.5px dashed var(--c-guid);color:var(--c-guid);font-size:11px}
+.fw-row.on{outline-color:var(--ink);background:var(--accent);color:var(--accent-ink)}
 .disk{display:grid;gap:6px}
 .icons{display:flex;flex-wrap:wrap;gap:3px;min-height:16px}
 .icons i{width:11px;height:14px;border-radius:2px;background:var(--accent);opacity:.8}
@@ -420,17 +433,49 @@ footer{padding-top:32px;font-size:13px;color:var(--muted);max-width:80ch}
 
   <div class="sub">
     <h3>Les insertions</h3>
-    <p>Les trois méthodes insèrent les mêmes lignes en parallèle. Avec une clé croissante, chaque nouvelle ligne va dans la dernière page ; quand elle est pleine, SQL Server en ouvre une nouvelle. Avec <code>NEWID()</code>, chaque ligne doit se ranger à sa place dans l'ordre de la clé, souvent dans une page déjà pleine : SQL Server la coupe en deux et déplace la moitié des lignes dans une nouvelle page, ajoutée en fin de fichier. Les DBA appellent cela un <b>page split</b>. Cliquer sur « Lancer » pour voir l'effet.</p>
+    <p>Au départ, chaque table contient déjà 120 lignes, bien rangées par une reconstruction d'index (le réglage « fill factor » est expliqué juste après). Les trois méthodes insèrent ensuite les mêmes nouvelles lignes en parallèle. Avec une clé croissante, chaque nouvelle ligne va dans la dernière page ; quand elle est pleine, SQL Server en ouvre une nouvelle. Avec <code>NEWID()</code>, chaque ligne doit se ranger à sa place dans l'ordre de la clé, souvent dans une page déjà pleine : SQL Server la coupe en deux et déplace la moitié des lignes dans une nouvelle page, ajoutée en fin de fichier. Les DBA appellent cela un <b>page split</b>. Cliquer sur « Lancer » pour voir l'effet.</p>
     <div class="toolbar">
       <button class="btn primary" id="simPlay">Lancer</button>
       <button class="btn" id="simOne">+1 ligne</button>
       <button class="btn" id="simFifty">+50 lignes</button>
       <button class="btn" id="simReset">Réinitialiser</button>
+      <span class="ffbar"><span class="hint">Fill factor</span><span class="seg" id="ffSeg"><button data-ff="100" aria-pressed="true">100 %</button><button data-ff="90" aria-pressed="false">90 %</button><button data-ff="80" aria-pressed="false">80 %</button><button data-ff="70" aria-pressed="false">70 %</button></span></span>
+      <button class="btn" id="simRebuild">Reconstruire l'index</button>
       <span class="hint">Modèle réduit : 12 lignes par page avec une clé int, 10 avec un GUID, le rapport observé pour une ligne d'environ 60 octets.</span>
     </div>
     <div class="lanes" id="lanes"></div>
     <p class="hint">Chaque case est une page de la table, rangée dans l'ordre de la clé. Le chiffre en gros indique combien de lignes elle contient, le petit « p12 » sa position sur le disque. Une page qui vient d'être coupée en deux clignote.</p>
     <p class="enclair"><b>Ordre de lecture sur le disque :</b> pour lire la table dans l'ordre de la clé, SQL Server suit cette courbe. Une ligne droite veut dire des pages rangées les unes après les autres, lues d'un seul trait. Un zigzag veut dire des sauts permanents d'un bout à l'autre du fichier. Avec NEWID(), les pages sont aussi à moitié vides : il en faut plus pour les mêmes lignes, sur le disque comme en mémoire. NEWSEQUENTIALID() évite les coupures et le désordre, mais garde des lignes de 16 octets de clé.</p>
+  </div>
+
+  <div class="sub">
+    <h3>Fill factor : laisser de la place exprès</h3>
+    <p>Un index se « reconstruit » : c'est une opération de maintenance, souvent planifiée la nuit par le DBA, qui réécrit toutes les pages bien rangées et bien remplies. À cette occasion, on peut demander de ne remplir chaque page qu'en partie, par exemple à 80 %. Ce pourcentage s'appelle le <b>fill factor</b> (taux de remplissage). La place laissée libre absorbe les futures insertions au milieu, sans avoir à couper les pages.</p>
+    <div class="tbl-wrap"><table><thead><tr><th></th><th>Fill factor</th><th>Fragmentation</th></tr></thead><tbody>
+      <tr><td>Ce que c'est</td><td>De la place libre laissée exprès dans chaque page</td><td>Des pages à moitié vides et rangées dans le désordre</td></tr>
+      <tr><td>D'où ça vient</td><td>Un réglage choisi au moment de la reconstruction</td><td>Les insertions au milieu et les pages coupées en deux</td></tr>
+      <tr><td>Quand</td><td>Appliqué une seule fois, lors de la reconstruction</td><td>S'accumule au fil des insertions</td></tr>
+      <tr><td>Ce que ça coûte</td><td>Plus de pages dès le départ, en échange de moins de coupures</td><td>Plus de pages, et des lectures en zigzag sur le disque</td></tr>
+    </tbody></table></div>
+    <p class="enclair"><b>À essayer dans la simulation ci-dessus :</b> choisir 70 %, puis « Lancer ». Avec NEWID(), les pages absorbent les premières insertions sans être coupées, mais les tables démarrent avec plus de pages. Une fois les trous comblés, les coupures reprennent : « Reconstruire l'index » remet tout en ordre, comme le fait une maintenance planifiée. Regarder aussi la colonne int IDENTITY : les pages à 70 % y restent à 70 % pour toujours.</p>
+    <ul class="tips">
+      <li><b>Il ne s'applique qu'à la reconstruction.</b> Entre deux maintenances, SQL Server remplit les pages à 100 %, et le vide prévu se comble peu à peu.</li>
+      <li><b>Inutile avec une clé int IDENTITY.</b> Toutes les insertions se font à la fin : la place laissée dans les anciennes pages ne servira jamais, c'est du disque et de la mémoire perdus.</li>
+      <li><b>Jamais « par précaution » sur tout le serveur.</b> Un fill factor de 80 % partout, c'est 25 % de pages en plus à lire pour chaque requête.</li>
+      <li><b>Utile là où les insertions tombent forcément au milieu</b>, même avec une clé int : un index secondaire sur le nom ou l'email, par exemple, car les nouveaux clients ne s'appellent pas tous Zoé.</li>
+    </ul>
+  </div>
+
+  <div class="sub">
+    <h3>Une table sans index clusterisé : les lignes qui déménagent</h3>
+    <p>Une table créée sans clé primaire, ou avec une clé primaire déclarée <code>NONCLUSTERED</code>, n'est rangée dans aucun ordre : SQL Server pose chaque nouvelle ligne là où il reste de la place. On appelle ce rangement un <b>tas</b> (<i>heap</i> en anglais). On en croise souvent dans les tables de logs, d'import ou de travail.</p>
+    <p class="enclair"><b>En clair :</b> dans un tas, quand une ligne grossit lors d'un UPDATE (un commentaire rempli après coup, un texte qui passe de 10 à 2 000 caractères) et ne tient plus dans sa page, SQL Server la déménage dans une autre page. Les index secondaires connaissent encore l'ancienne adresse : il laisse donc à sa place une <b>adresse de réexpédition</b>, comme un suivi de courrier après un déménagement. Les DBA parlent de <b>forwarded record</b>. Chaque lecture qui passe par l'ancienne adresse fait ensuite un détour.</p>
+    <div class="card fw-card">
+      <div class="toolbar"><button class="btn primary" id="fwdUp">Allonger le commentaire d'un client</button><button class="btn" id="fwdRead">Lire toute la table</button><button class="btn" id="fwdReset">Réinitialiser</button></div>
+      <div class="fw-pages" id="fwdPages"></div>
+      <p class="verdict" id="fwdLog"></p>
+    </div>
+    <p class="hint">Avec un index clusterisé, ce phénomène n'existe pas : la ligne reste à sa place dans l'ordre de la clé, et c'est la page qui est coupée en deux, comme vu plus haut. Pour nettoyer un tas existant, un DBA lance <code>ALTER TABLE ... REBUILD</code>. Le plus simple reste de donner une clé primaire clusterisée à chaque table, et de se méfier des colonnes de texte créées vides puis remplies plus tard.</p>
   </div>
 
   <div class="sub">
@@ -593,6 +638,10 @@ footer{padding-top:32px;font-size:13px;color:var(--muted);max-width:80ch}
       <tr><td>Index clusterisé</td><td>La table elle-même, rangée dans l'ordre de sa clé primaire. Une seule par table.</td></tr>
       <tr><td>Index non clusterisé</td><td>Un index secondaire : une copie triée de quelques colonnes, avec la clé primaire pour retrouver la ligne.</td></tr>
       <tr><td>Page split</td><td>Page pleine coupée en deux pour faire de la place à une insertion au milieu. Typique des clés GUID aléatoires.</td></tr>
+      <tr><td>Reconstruction d'index (rebuild)</td><td>Maintenance qui réécrit toutes les pages d'un index, bien rangées et bien remplies. Efface la fragmentation, pour un temps.</td></tr>
+      <tr><td>Fill factor</td><td>Taux de remplissage des pages choisi lors d'une reconstruction, pour laisser de la place aux insertions futures.</td></tr>
+      <tr><td>Tas (heap)</td><td>Table sans index clusterisé : les lignes sont posées là où il reste de la place, sans ordre.</td></tr>
+      <tr><td>Forwarded record</td><td>Dans un tas, ligne déplacée parce qu'elle a grossi, avec une adresse de réexpédition laissée à son ancienne place.</td></tr>
       <tr><td>Fragmentation</td><td>Pages qui ne se suivent plus sur le disque, ou à moitié vides. Plus de pages à lire pour les mêmes données.</td></tr>
       <tr><td>Index Seek / Index Scan</td><td>Accès direct au bon endroit de l'index, ou lecture de l'index en entier. Visible dans le plan d'exécution.</td></tr>
       <tr><td>Sargable</td><td>Condition écrite de façon à permettre un Index Seek : la colonne seule, sans fonction ni calcul autour.</td></tr>
@@ -821,7 +870,10 @@ function onDrop(p,z,x,y){
 function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 const LANES=[{k:'int',t:'int IDENTITY',s:'clé croissante · 4 o',mode:'seq',cap:12},{k:'guid',t:'uniqueidentifier · NEWID()',s:'clé aléatoire · 16 o',mode:'rand',cap:10},{k:'seq',t:'uniqueidentifier · NEWSEQUENTIALID()',s:'clé croissante · 16 o',mode:'seq',cap:10}];
 let rnd=mulberry(42),lanes,MAXR=600;
-function resetSim(){lanes=LANES.map(L=>({...L,pages:[{id:1,keys:[]}],next:2,splits:0,moved:0,rows:0,ctr:0,hit:null,flash:new Set()}));}
+let FF=100;const BASE=120;
+function packPages(l,keys){const per=Math.max(1,Math.floor(l.cap*FF/100));l.pages=[];for(let i=0;i<keys.length;i+=per)l.pages.push({id:l.pages.length+1,keys:keys.slice(i,i+per)});if(!l.pages.length)l.pages.push({id:1,keys:[]});l.next=l.pages.length+1;}
+function resetSim(){lanes=LANES.map(L=>{const l={...L,splits:0,moved:0,rows:BASE,ctr:BASE,hit:null,flash:new Set()};const keys=L.mode==='seq'?Array.from({length:BASE},(_,i)=>i+1):Array.from({length:BASE},()=>rnd()).sort((a,b)=>a-b);packPages(l,keys);return l;});}
+function rebuildSim(){lanes.forEach(l=>{packPages(l,l.pages.flatMap(p=>p.keys));l.hit=null;l.flash.clear();});}
 function insert(l){
   l.flash.clear();
   let k,idx;
@@ -856,7 +908,43 @@ $('#simPlay').onclick=()=>{if(timer){stop();return;}if(lanes[0].rows>=MAXR){rese
 $('#simOne').onclick=()=>step(1);
 $('#simFifty').onclick=()=>step(50);
 $('#simReset').onclick=()=>{stop();rnd=Math.random;resetSim();renderLanes();};
-resetSim();for(let i=0;i<180;i++)lanes.forEach(insert);lanes.forEach(l=>l.flash.clear());renderLanes();
+$$('#ffSeg button').forEach(b=>b.onclick=()=>{$$('#ffSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));FF=+b.dataset.ff;stop();resetSim();renderLanes();});
+$('#simRebuild').onclick=()=>{stop();rebuildSim();renderLanes();};
+resetSim();for(let i=0;i<60;i++)lanes.forEach(insert);lanes.forEach(l=>l.flash.clear());renderLanes();
+
+/* lignes qui déménagent dans un tas */
+const FW0=[{id:1,b:1100},{id:2,b:1300},{id:3,b:1000},{id:4,b:1250},{id:5,b:1150},{id:6,b:1200}];
+const FWU=[3,5,1];
+const FWD={p1:[],p2:[],n:0,log:'',timer:null};
+function fwdReset(){clearInterval(FWD.timer);FWD.p1=FW0.map(r=>({...r}));FWD.p2=[];FWD.n=0;FWD.log='Six clients tiennent dans la page 1. Il reste un peu de place libre (zone hachurée).';renderFwd();}
+function renderFwd(){
+  const H=300,px=b=>Math.max(20,b/8096*H);
+  const page=(no,rows)=>{const used=rows.reduce((a,r)=>a+r.b,0);return `<div class="fw-page"><div class="fw-h"><b>Page ${no}</b><span>${nf.format(used)} / 8 096 o utilisés</span></div><div class="fw-box" style="height:${H}px">${rows.map(r=>`<div class="fw-row${r.fwd?' stub':''}${r.moved?' moved':''}" data-k="${no}-${r.id}" style="height:${px(r.b)}px">${r.fwd?`client ${r.id} : voir page 2`:`client ${r.id} · ${nf.format(r.b)} o`}</div>`).join('')}</div></div>`;};
+  $('#fwdPages').innerHTML=page(1,FWD.p1)+page(2,FWD.p2);
+  $('#fwdLog').innerHTML=FWD.log;
+}
+$('#fwdUp').onclick=()=>{
+  clearInterval(FWD.timer);
+  if(FWD.n>=FWU.length){FWD.log='Tous les exemples sont passés : « Lire toute la table » pour voir le coût, ou « Réinitialiser ».';renderFwd();return;}
+  const id=FWU[FWD.n++],add=2500,i=FWD.p1.findIndex(r=>r.id===id),r=FWD.p1[i],used=FWD.p1.reduce((a,x)=>a+x.b,0);
+  if(used+add<=8096){r.b+=add;FWD.log=`Le client ${id} grossit de ${nf.format(add)} o et tient encore dans sa page.`;}
+  else{FWD.p1[i]={id,b:9,fwd:true};FWD.p2.push({id,b:r.b+add,moved:true});
+    FWD.log=`Le commentaire du client ${id} passe sa ligne à <b>${nf.format(r.b+add)} o</b> : elle ne tient plus dans la page 1. SQL Server la déménage en page 2 et laisse à sa place une <b>adresse de réexpédition</b> de 9 octets (cadre pointillé).`;}
+  renderFwd();
+};
+$('#fwdRead').onclick=()=>{
+  clearInterval(FWD.timer);
+  const seq=[];let jumps=0;
+  FWD.p1.forEach(r=>{seq.push('1-'+r.id);if(r.fwd){seq.push('2-'+r.id);seq.push('1-'+r.id);jumps++;}});
+  FWD.p2.forEach(r=>{if(!r.moved)seq.push('2-'+r.id);});
+  const base=FWD.p2.length?2:1,total=base+jumps;
+  const done=()=>{$$('#fwdPages .fw-row').forEach(e=>e.classList.remove('on'));FWD.log=jumps?`Lecture terminée : <b>${total} lectures de page</b> au lieu de ${base}. Chaque adresse de réexpédition oblige à faire un aller-retour vers la page 2. Sur une vraie table, avec des milliers de lignes déplacées, ces détours se comptent en milliers de lectures en plus.`:`Lecture terminée : <b>${total} lecture${total>1?'s':''} de page</b>, sans aucun détour.`;$('#fwdLog').innerHTML=FWD.log;};
+  if(reduce){done();return;}
+  let i=0;$('#fwdLog').innerHTML='Lecture en cours…';
+  FWD.timer=setInterval(()=>{$$('#fwdPages .fw-row').forEach(e=>e.classList.remove('on'));if(i>=seq.length){clearInterval(FWD.timer);done();return;}const el=$(`#fwdPages [data-k="${seq[i]}"]`);if(el)el.classList.add('on');i++;},450);
+};
+$('#fwdReset').onclick=fwdReset;
+fwdReset();
 
 /* clé dans les index */
 const KT={pk:'guid',nIx:3,N:1e9};
