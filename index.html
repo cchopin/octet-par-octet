@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Démonstration interactive de l'impact des types de données SQL Server sur la taille des lignes, des pages, des index et des tris.">
+<title>Le poids des types</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+html{color-scheme:light}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+/* Layout : la page de 8 Ko sert d'unité de mesure ; chaque section se lit en octets, du disque jusqu'au tri en mémoire */
+:root{
+  --bg:#edf1f5; --surface:#ffffff; --surface-2:#f5f7fa; --ink:#14212f; --muted:#56667a; --line:#d2d9e2;
+  --accent:#2a55c0; --accent-ink:#ffffff;
+  --c-int:#2a55c0; --c-num:#b07a0a; --c-guid:#d4472a; --c-str:#138a75; --c-date:#7a44c6; --c-over:#93a0af; --c-free:#e1e7ee; --c-head:#5d6b7c;
+  --ok:#1d8048; --warn:#a97508; --bad:#d4472a;
+  --f-disp:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0e151e; --surface:#16202b; --surface-2:#1b2733; --ink:#e4eaf1; --muted:#97a4b4; --line:#2a3645;
+  --accent:#6f93ff; --accent-ink:#0e151e;
+  --c-int:#6f93ff; --c-num:#e0a634; --c-guid:#ff7657; --c-str:#38c4a8; --c-date:#b18bff; --c-over:#5e6c7d; --c-free:#1f2b38; --c-head:#8794a4;
+  --ok:#4cc47f; --warn:#e0a634; --bad:#ff7657; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0e151e; --surface:#16202b; --surface-2:#1b2733; --ink:#e4eaf1; --muted:#97a4b4; --line:#2a3645;
+  --accent:#6f93ff; --accent-ink:#0e151e;
+  --c-int:#6f93ff; --c-num:#e0a634; --c-guid:#ff7657; --c-str:#38c4a8; --c-date:#b18bff; --c-over:#5e6c7d; --c-free:#1f2b38; --c-head:#8794a4;
+  --ok:#4cc47f; --warn:#e0a634; --bad:#ff7657; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-body);padding-inline:16px;padding-block:0 48px}
+.wrap{max-width:1140px;margin:0 auto}
+h1,h2,h3{font-family:var(--f-disp);text-wrap:balance;margin:0;line-height:1.08}
+h2{font-size:clamp(1.6rem,3.6vw,2.4rem);font-weight:800;font-stretch:112%}
+h3{font-size:1.15rem;font-weight:700;font-stretch:105%}
+p{margin:0}
+code,.mono{font-family:var(--f-mono);font-size:.92em}
+.muted{color:var(--muted)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* nav */
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;margin-inline:-16px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav.toc .in{max-width:1140px;margin:0 auto;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+nav.toc a{flex:none;font:500 13px var(--f-mono);color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:6px}
+nav.toc a:hover{color:var(--ink);background:var(--surface)}
+
+/* hero */
+.hero{padding-block:56px 40px;display:grid;gap:28px}
+.hero .kicker{font:600 12px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.hero h1{font-size:clamp(2.4rem,7vw,5rem);font-weight:900;font-stretch:118%;letter-spacing:-.01em;max-width:14ch}
+.hero .lede{font-size:1.1rem;max-width:62ch;color:var(--muted)}
+.eq{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}
+.eq .t{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;display:grid;gap:2px;min-width:0}
+.eq .t b{font:800 clamp(1.5rem,4vw,2.3rem)/1 var(--f-disp);font-stretch:115%;font-variant-numeric:tabular-nums}
+.eq .t span{font:500 12px var(--f-mono);color:var(--muted)}
+.eq .op{align-self:center;font:700 1.6rem var(--f-disp);color:var(--muted)}
+.eq .t.res{background:var(--c-guid);border-color:var(--c-guid)}
+.eq .t.res b,.eq .t.res span{color:#fff}
+.eq .t.g b{color:var(--c-guid)} .eq .t.i b{color:var(--c-int)}
+
+section.sec{padding-block:48px 8px;border-top:1px solid var(--line);display:grid;gap:22px;scroll-margin-top:56px}
+.sec-head{display:grid;gap:10px;max-width:72ch}
+.eyebrow{font:600 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted)}
+.sub{display:grid;gap:14px;padding-top:12px}
+.sub > p{max-width:72ch}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.hint{font-size:.88rem;color:var(--muted)}
+
+/* chips */
+.f-int{--fam:var(--c-int)} .f-num{--fam:var(--c-num)} .f-guid{--fam:var(--c-guid)} .f-str{--fam:var(--c-str)} .f-date{--fam:var(--c-date)} .f-over{--fam:var(--c-over)}
+.chip{display:inline-flex;align-items:center;gap:6px;font:500 13px/1.1 var(--f-mono);padding:7px 9px;border-radius:6px;border:1px solid color-mix(in srgb,var(--fam) 45%,transparent);background:color-mix(in srgb,var(--fam) 11%,var(--surface));cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;white-space:nowrap}
+.chip::before{content:"";flex:none;width:8px;height:8px;border-radius:2px;background:var(--fam)}
+.chip .sz{color:var(--muted);font-size:11px}
+.chip:hover{border-color:var(--fam)}
+.chip.dragging{opacity:.35}
+.chip.sel{outline:2px solid var(--fam);outline-offset:1px}
+.chip .nm{font-weight:600}
+.chip .pk{font-size:10px;font-weight:600;padding:1px 4px;border-radius:3px;background:var(--fam);color:var(--surface)}
+.ghost{position:fixed;left:0;top:0;z-index:1000;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:grabbing}
+
+.palette{display:grid;gap:10px}
+.pgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pgroup > span{font:600 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);width:92px;flex:none}
+.palette.trash-over{outline:2px dashed var(--bad);outline-offset:6px;border-radius:8px}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 12px;font-size:14px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 11px;font-size:13px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.versions{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:900px){.versions{grid-template-columns:1fr 1fr}}
+.ver{display:grid;gap:14px;min-width:0}
+.ver-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.ver-head .tag{font:600 12px var(--f-mono);color:var(--muted)}
+.ver.active .ver-head h3::after{content:" · active";font:500 12px var(--f-mono);color:var(--accent)}
+.dropzone{min-height:70px;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;padding:10px;border:1.5px dashed var(--line);border-radius:8px;background:var(--surface-2)}
+.dropzone.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface-2))}
+.dropzone:empty::after{content:"Glisser des types ici";color:var(--muted);font-size:13px;margin:auto}
+
+.editor{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;padding:12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);align-items:end}
+.editor label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+.editor input,.editor select{font:14px var(--f-mono);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);width:100%;min-width:0}
+.editor .acts{display:flex;gap:6px}
+
+.strip-wrap{display:grid;gap:4px}
+.strip{display:flex;height:34px;border-radius:5px;overflow:hidden;background:var(--c-free)}
+.strip i{display:block;min-width:2px;background:var(--fam);border-right:1px solid var(--surface);transition:flex-basis .35s ease;position:relative;overflow:hidden;font:500 10px/34px var(--f-mono);color:#fff;padding-left:3px;white-space:nowrap;text-overflow:clip;font-style:normal}
+.strip-scale{display:flex;justify-content:space-between;font:11px var(--f-mono);color:var(--muted)}
+.pagebox{display:grid;gap:6px}
+.pageviz{display:grid;grid-template-columns:minmax(110px,44%) minmax(0,1fr);gap:14px;height:420px}
+.page{position:relative;border:1px solid var(--line);border-radius:4px;background:var(--surface-2);overflow:hidden}
+.pz{position:absolute;left:0;right:0}
+.pz.head{background:var(--c-head)}
+.pz.slot{background:var(--muted)}
+.pz.free{background:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--bad) 35%,transparent) 5px 7px)}
+.pz.row{box-shadow:inset 0 -1px 0 var(--surface)}
+.page.thin .pz.row{box-shadow:none}
+.pz.row.in{animation:drop .35s backwards ease-out}
+@keyframes drop{from{opacity:0;transform:translateY(-10px)}}
+.pnotes{position:relative;font-size:12px;line-height:1.35;color:var(--muted)}
+.pnotes .grp{position:absolute;left:0;right:0;display:grid;gap:3px;padding-left:10px;border-left:2px solid var(--line)}
+.pnotes .mid{top:50%;transform:translateY(-50%);border-color:var(--accent)}
+.pnotes .top{top:0}
+.pnotes .bot{bottom:0}
+.pnotes b{color:var(--ink);font-family:var(--f-mono)}
+.pnotes .big2{font:800 2rem/1 var(--f-disp);font-stretch:112%;color:var(--ink)}
+.basics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+.bcard{display:grid;gap:8px;align-content:start}
+.bcard p{font-size:14px;color:var(--muted)}
+.bill{height:58px;display:flex;align-items:center;gap:10px}
+.bill .box{display:grid;gap:3px;padding:5px;border:2px solid var(--ink);border-radius:4px;width:62px}
+.bill .box i{display:block;height:5px;border-radius:1px;background:var(--c-str)}
+.bill .box.hl{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+.bill .box i.me{background:var(--c-guid)}
+.bill .tag2{font:600 12px var(--f-mono);padding:4px 7px;border-radius:4px;background:var(--c-int);color:var(--surface)}
+.bill .arrow{font:700 1.2rem var(--f-disp);color:var(--muted)}
+.bill .mem{display:flex;gap:3px;padding:5px;border:2px solid var(--ink);border-radius:4px}
+.bill .mem i{width:14px;height:30px;border-radius:2px;background:var(--accent)}
+.bill .mem i.free{background:transparent;border:1px dashed var(--muted)}
+.enclair{border-left:3px solid var(--accent);background:var(--surface);padding:10px 14px;border-radius:0 8px 8px 0;font-size:15px;max-width:76ch}
+.enclair b{color:var(--accent)}
+.lookup-card{display:grid;gap:14px}
+.lookup{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:center}
+@media (max-width:760px){.lookup{grid-template-columns:1fr}.lk-arrow{transform:rotate(90deg);justify-self:center}}
+.lk-panel{display:grid;gap:6px;min-width:0}
+.lk-panel h4{margin:0;font:700 .95rem var(--f-disp);font-stretch:105%}
+.lk-panel .tw{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+.lk-panel table{font:12px var(--f-mono)}
+.lk-panel td,.lk-panel th{padding:6px 8px;white-space:nowrap}
+.lk-panel tr{transition:background .25s}
+.lk-panel tbody tr.on{background:color-mix(in srgb,var(--accent) 22%,transparent)}
+.lk-panel td.key{color:var(--kc);font-weight:600}
+.lk-panel td.key.on{background:var(--kc);color:var(--surface)}
+.lk-panel button.em{all:unset;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.lk-panel button.em:focus-visible{outline:2px solid var(--accent)}
+.lk-arrow{font:600 12px var(--f-mono);color:var(--muted);text-align:center;display:grid;gap:2px}
+.lk-arrow b{font:800 1.6rem var(--f-disp);color:var(--accent)}
+.lk-steps{margin:0;padding-left:22px;display:grid;gap:4px;font-size:14px;color:var(--muted)}
+.lk-steps li.on{color:var(--ink);font-weight:600}
+.krow-note{font-size:13px;color:var(--muted)}
+.utiles{display:flex;flex-wrap:wrap;gap:3px}
+.utiles span{display:grid;justify-items:center;min-width:30px;padding:3px 5px;border-radius:4px;border:1px solid var(--line);background:var(--surface-2);font:15px/1.2 var(--f-mono)}
+.utiles span small{font-size:10px;color:var(--muted)}
+.utiles span.lost{border-color:var(--bad);color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,var(--surface-2))}
+.utiles span.w2{border-color:var(--c-str)}
+.utiles span.w3{border-color:var(--c-date)}
+.urow{display:grid;gap:6px}
+.urow .lab{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.urow .lab b{color:var(--ink);font-family:var(--f-mono)}
+.sg-grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media (min-width:860px){.sg-grid{grid-template-columns:1fr 1fr}}
+.sg-panel{display:grid;gap:10px;align-content:start;min-width:0}
+.sg-code{white-space:pre;font:13px var(--f-mono);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto;margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:3px}
+.tiles span{font:11px var(--f-mono);padding:5px 3px;border-radius:3px;background:var(--surface-2);border:1px solid var(--line);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s}
+.tiles span.read{background:color-mix(in srgb,var(--warn) 30%,var(--surface-2))}
+.tiles span.hit{background:var(--ok);color:var(--surface);border-color:var(--ok)}
+.tiles span.jump{outline:2px solid var(--accent);outline-offset:1px}
+.sg-count{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.keygen{display:grid;gap:10px;align-content:start}
+.kv{margin:0;padding-left:22px;font:12px/1.8 var(--f-mono);overflow-x:auto;white-space:nowrap}
+.kv-int li{color:var(--c-int);font-weight:600}
+.kv-guid li{color:var(--c-guid)}
+.kv-seq li{color:var(--muted)}
+.kv-seq li b{color:var(--c-date)}
+.disk{display:grid;gap:6px}
+.icons{display:flex;flex-wrap:wrap;gap:3px;min-height:16px}
+.icons i{width:11px;height:14px;border-radius:2px;background:var(--accent);opacity:.8}
+@media (max-width:560px){.pageviz{height:360px}}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font:11px var(--f-mono);color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend span::before{content:"";width:9px;height:9px;border-radius:2px;background:var(--fam)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.stats div{background:var(--surface);padding:9px 10px;display:grid;gap:2px;min-width:0}
+.stats dt{font-size:11px;color:var(--muted)}
+.stats dd{margin:0;font:600 15px var(--f-mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.warnline{font-size:13px;color:var(--bad)}
+
+.ctrls{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.range{display:grid;gap:6px}
+.range label{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted)}
+.range label b{color:var(--ink);font:600 14px var(--f-mono)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+
+.compare{display:grid;gap:10px}
+.cbar{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;font:13px var(--f-mono)}
+.cbar .track{height:22px;background:var(--surface-2);border-radius:4px;overflow:hidden;display:flex}
+.cbar .track i{display:block;height:100%;transition:width .45s ease}
+.verdict{font-size:1.05rem;max-width:70ch}
+.verdict b{font-family:var(--f-mono)}
+
+/* lanes */
+.lanes{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:960px){.lanes{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.lane{display:grid;gap:10px;align-content:start;min-width:0}
+.lane h3{font-size:1rem}
+.lane .ls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;font-size:12px;color:var(--muted)}
+.lane .ls b{color:var(--ink);font:600 13px var(--f-mono);font-variant-numeric:tabular-nums}
+.pages{display:flex;flex-wrap:wrap;gap:3px;min-height:60px}
+.pg{width:30px;height:42px;border:1px solid var(--line);border-radius:3px;position:relative;background:var(--surface-2);overflow:hidden}
+.pg i{position:absolute;left:0;right:0;bottom:0;background:var(--lane);opacity:.45;transition:height .2s}
+.pg span{position:absolute;left:0;right:0;top:2px;text-align:center;font:8px var(--f-mono);color:var(--muted)}
+.pg em{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:600 13px var(--f-mono);font-style:normal;color:var(--ink)}
+.diskorder{display:grid;gap:4px}
+.diskorder svg{width:100%;height:70px;background:var(--surface-2);border-radius:4px}
+.diskorder polyline{stroke:var(--lane);stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.diskorder line.ideal{stroke:var(--line);stroke-dasharray:4 4;vector-effect:non-scaling-stroke}
+.diskorder .ax{display:flex;justify-content:space-between;font:10px var(--f-mono);color:var(--muted)}
+.pg.hit{outline:2px solid var(--ink);outline-offset:-1px}
+.pg.split{animation:flash 900ms ease-out}
+@keyframes flash{0%{background:var(--c-guid)}100%{background:var(--surface-2)}}
+.lane-int{--lane:var(--c-int)} .lane-guid{--lane:var(--c-guid)} .lane-seq{--lane:var(--c-date)}
+
+.keytrip{display:grid;gap:8px}
+.krow{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;font:12px var(--f-mono);color:var(--muted)}
+.krow .bar{display:flex;height:20px;border-radius:4px;overflow:hidden;background:var(--surface-2)}
+.krow .bar i{display:block;height:100%;transition:width .4s ease;font:500 10px/20px var(--f-mono);color:#fff;padding-left:4px;overflow:hidden;white-space:nowrap;font-style:normal}
+@media (max-width:560px){.krow{grid-template-columns:1fr}}
+
+.guids{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}
+.guids ol{margin:0;padding-left:22px;font:13px/1.9 var(--f-mono);overflow-x:auto}
+.guids .gE{color:var(--c-guid);font-weight:600}
+.guids .gD{color:var(--c-num);font-weight:600}
+
+/* sort */
+.sortgrid{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:900px){.sortgrid{grid-template-columns:1fr 1fr}}
+.mbar{display:grid;gap:4px}
+.mbar .lab{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);gap:8px}
+.mbar .lab b{color:var(--ink);font:600 13px var(--f-mono)}
+.mbar .track{height:16px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.mbar .track i{display:block;height:100%;transition:width .45s ease}
+.slots{display:flex;flex-wrap:wrap;gap:3px}
+.slots i{width:12px;height:12px;border-radius:2px;background:var(--accent);opacity:.8}
+.big{font:800 2rem/1 var(--f-disp);font-stretch:112%;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:600 11px var(--f-mono);padding:3px 7px;border-radius:999px;border:1px solid currentColor}
+.pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+.query{font:13px var(--f-mono);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;overflow-x:auto}
+
+/* table */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font:600 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td .hb{height:10px;border-radius:3px;background:var(--fam,var(--accent));transition:width .35s ease;min-width:2px}
+.phonein{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.phonein input{font:600 1.2rem var(--f-mono);padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:min(100%,320px)}
+
+/* dates */
+.dtpal{display:flex;flex-wrap:wrap;gap:6px}
+.needs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:12px}
+.need{display:grid;gap:8px;align-content:start}
+.need .ex{font:13px var(--f-mono);color:var(--muted)}
+.slot{min-height:46px;border:1.5px dashed var(--line);border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;padding:6px;cursor:pointer;width:100%;font-size:13px;color:var(--muted)}
+.slot.over{border-color:var(--accent)}
+.slot.filled{border-style:solid}
+.need .res{font-size:13px;display:grid;gap:4px}
+.need.v-ideal{border-color:var(--ok)} .need.v-ok{border-color:var(--warn)} .need.v-bad{border-color:var(--bad)}
+.score{font:600 14px var(--f-mono)}
+.prec{display:grid;gap:12px}
+.readout{font:600 clamp(1rem,3.2vw,1.5rem) var(--f-mono);overflow-wrap:anywhere}
+.readout .frac{color:var(--c-date)}
+.round{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.round .v{font:600 1.05rem var(--f-mono);overflow-wrap:anywhere}
+.round .v.bad{color:var(--bad)}
+
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.rules .card p{font-size:14px;color:var(--muted)}
+.rules .card h3{font-size:1rem;margin-bottom:6px}
+footer{padding-top:32px;font-size:13px;color:var(--muted);max-width:80ch}
+
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.pgroup > span{width:100%}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<nav class="toc" aria-label="Sections"><div class="in">
+  <a href="#bases">00 Les bases</a><a href="#atelier">01 Atelier</a><a href="#cle">02 Clé primaire</a><a href="#tri">03 Tri et mémoire</a><a href="#unicode">04 Texte et Unicode</a><a href="#telephone">05 Téléphone</a><a href="#dates">06 Dates</a><a href="#requetes">07 Requêtes</a><a href="#memo">08 Mémo</a>
+</div></nav>
+
+<div class="wrap">
+<header class="hero">
+  <p class="kicker">SQL Server · types de données</p>
+  <h1>Un octet de trop, un milliard de fois</h1>
+  <p class="lede">Choisir un type, c'est choisir combien de lignes tiennent dans une page de 8 Ko, combien de pages il faut lire, et combien de mémoire une requête réserve. Exemple avec la clé primaire d'une table d'un milliard de lignes.</p>
+  <div class="eq" aria-label="16 octets moins 4 octets, multiplié par un milliard de lignes, égale 11,2 Go par index">
+    <div class="t g"><b>16 o</b><span>uniqueidentifier</span></div>
+    <div class="op">−</div>
+    <div class="t i"><b>4 o</b><span>int</span></div>
+    <div class="op">×</div>
+    <div class="t"><b>1 000 000 000</b><span>lignes</span></div>
+    <div class="op">=</div>
+    <div class="t res"><b>11,2 Go</b><span>de plus, dans la table et dans chaque index</span></div>
+  </div>
+  <p class="hint">Chaque Go de trop est lu sur le disque, occupe de la mémoire, puis est sauvegardé, répliqué et restauré. Et il se multiplie avec le nombre d'index.</p>
+</header>
+
+<!-- 00 -->
+<section class="sec" id="bases">
+  <div class="sec-head">
+    <p class="eyebrow">00 · Les bases</p>
+    <h2>Ce qu'il faut savoir avant de commencer</h2>
+    <p class="lede">Quatre idées suffisent pour comprendre tout le reste de la page. Les tailles sont données en octets (o) : 1 Ko = 1 024 octets.</p>
+  </div>
+  <div class="basics">
+    <div class="card bcard"><div class="bill"><span class="box"><i></i><i></i><i></i><i></i><i></i></span></div><h3>Les données sont rangées dans des boîtes de 8 Ko</h3><p>SQL Server ne range pas les lignes une par une : il les met dans des « pages » de 8 Ko, comme des fiches dans des boîtes de taille fixe. Plus une ligne est petite, plus il en tient dans une boîte.</p></div>
+    <div class="card bcard"><div class="bill"><span class="box hl"><i></i><i class="me"></i><i></i><i></i><i></i></span></div><h3>On lit toujours une boîte entière</h3><p>Pour lire une seule ligne, SQL Server charge la page complète, du disque vers la mémoire. Moins de boîtes, c'est moins de lectures disque, plus de données en cache, des sauvegardes plus courtes.</p></div>
+    <div class="card bcard"><div class="bill"><span class="tag2">PK</span><span class="arrow">→</span><span class="box"><i></i><i></i><i></i></span></div><h3>La clé primaire décide du rangement</h3><p>Les boîtes sont triées selon la clé primaire, comme un classeur trié par numéro. Chaque index secondaire est un petit répertoire à part qui recopie la clé pour retrouver la ligne, comme l'index à la fin d'un livre renvoie à un numéro de page. Les DBA parlent d'<b>index clusterisé</b> pour la table rangée par sa clé, et d'<b>index non clusterisés</b> pour les index secondaires.</p></div>
+    <div class="card bcard"><div class="bill"><span class="mem"><i></i><i></i><i class="free"></i><i class="free"></i></span></div><h3>La mémoire se réserve à l'avance</h3><p>Avant un tri (ORDER BY), un regroupement (GROUP BY) ou certaines jointures, SQL Server réserve de la mémoire, comme une table au restaurant, en devinant la taille des données d'après les types déclarés. Une réservation trop grande bloque les autres requêtes, une trop petite oblige à trier sur le disque.</p></div>
+  </div>
+</section>
+
+<!-- 01 -->
+<section class="sec" id="atelier">
+  <div class="sec-head">
+    <p class="eyebrow">01 · Atelier</p>
+    <h2>Construire une ligne, octet par octet</h2>
+    <p class="lede">Glisser des types depuis la palette vers la version A ou B, puis cliquer sur une colonne pour régler son nom et ses longueurs. Chaque version montre une page de 8 Ko remplie au maximum, puis le nombre de pages nécessaires sur le disque.</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> la même table Client, écrite deux fois. Seuls les types changent. La version B fait tenir presque deux fois plus de clients par page, donc presque deux fois moins de pages à lire et à garder en mémoire.</p>
+  <div class="toolbar">
+    <span class="hint">Exemples :</span>
+    <button class="btn" data-preset="client">Table Client</button>
+    <button class="btn" data-preset="commande">Lignes de commande</button>
+    <button class="btn" data-preset="vide">Vider</button>
+    <span class="hint">Un clic sur un type l'ajoute à la version active.</span>
+  </div>
+  <div class="palette card" id="palette" data-drop="trash" aria-label="Palette de types"></div>
+  <p class="hint">Lire la palette : <b>o</b> = octet. Pour les chaînes, <b>n</b> est la longueur déclarée, <b>lg</b> la longueur réelle du texte stocké, et <b>+2</b> les 2 octets que SQL Server ajoute pour savoir où le texte s'arrête. Jusqu'à 8 colonnes bit partagent un seul octet. decimal et money sont exacts, float est approché (0,1 + 0,2 n'y vaut pas exactement 0,3) : à éviter pour des montants.</p>
+  <p class="hint">La première colonne sert de clé primaire. Glisser une colonne vers la palette pour la supprimer. En gris dans la bande, le surcoût que SQL Server ajoute à chaque ligne : un en-tête de 4 octets, des marqueurs indiquant quelles colonnes sont NULL, et la position de chaque texte. SQL Server range physiquement les colonnes fixes avant les colonnes variables, quel que soit l'ordre du CREATE TABLE : la bande de chaque version suit cet ordre réel.</p>
+
+  <div class="versions">
+    <div class="ver card" data-ver="A" id="verA"></div>
+    <div class="ver card" data-ver="B" id="verB"></div>
+  </div>
+
+  <div class="card ctrls">
+    <div class="range"><label for="rngN">Nombre de lignes <b id="lblN"></b></label><input type="range" id="rngN" min="4" max="9" step="0.1" value="8"></div>
+    <div class="range"><label for="rngIx">Index secondaires <b id="lblIx"></b></label><input type="range" id="rngIx" min="0" max="8" step="1" value="3"></div>
+    <p class="hint" style="grid-column:1/-1">Chaque index secondaire recopie la clé primaire (la première colonne) de toutes les lignes. Une clé GUID alourdit donc la table et chacun de ses index : la section 02 montre comment.</p>
+  </div>
+  <div class="card compare" id="compare"></div>
+</section>
+
+<!-- 02 -->
+<section class="sec" id="cle">
+  <div class="sec-head">
+    <p class="eyebrow">02 · Clé primaire</p>
+    <h2>int ou GUID : la clé se paie trois fois</h2>
+    <p class="lede">Une fois en largeur de ligne, une fois à chaque insertion, et une fois dans chaque index secondaire, qui recopie la clé pour retrouver la ligne.</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> avec un compteur (int IDENTITY), chaque nouvelle ligne va à la fin, comme on ajoute une fiche au fond du classeur. Avec un GUID aléatoire, chaque nouvelle ligne doit s'insérer au milieu d'une boîte déjà pleine : SQL Server coupe la boîte en deux et déménage la moitié des fiches. C'est lent, et les boîtes restent à moitié vides.</p>
+
+  <div class="sub">
+    <h3>Trois façons de générer la clé</h3>
+    <p>Une clé primaire technique est le plus souvent générée automatiquement par la base. Voici les trois manières comparées dans la suite, avec les valeurs qu'elles produisent pour cinq insertions successives.</p>
+    <div class="rules">
+      <div class="card keygen"><h3>int IDENTITY(1,1)</h3><p>Un compteur : chaque nouvelle ligne reçoit le numéro suivant. 4 octets, toujours croissant.</p>
+        <pre class="sg-code">CREATE TABLE Client (
+  id int IDENTITY(1,1) PRIMARY KEY, ...</pre>
+        <ol class="kv kv-int"><li>1</li><li>2</li><li>3</li><li>4</li><li>5</li></ol></div>
+      <div class="card keygen"><h3>uniqueidentifier + NEWID()</h3><p>Un GUID tiré au hasard, unique au monde. 16 octets, sans aucun ordre : deux valeurs successives n'ont rien en commun. C'est aussi ce que produit <code>Guid.NewGuid()</code> côté application.</p>
+        <pre class="sg-code">id uniqueidentifier
+   DEFAULT NEWID() PRIMARY KEY</pre>
+        <ol class="kv kv-guid"><li>9C4E2A71-0B3F-4D8E-A1C2-7F30B6D45E19</li><li>27D1F0B8-E64A-4C0B-9F77-1A82C3E9D604</li><li>E8A03C5D-71B2-4F96-8D41-C05F7A2B9E83</li><li>4B6F9E12-3CD7-48A0-B5E8-92D1F06C7A35</li><li>B013D7C9-5A8E-4E21-86F3-3E9C4B7D10A8</li></ol></div>
+      <div class="card keygen"><h3>uniqueidentifier + NEWSEQUENTIALID()</h3><p>Un GUID généré par SQL Server dans l'ordre croissant : chaque valeur est un peu plus grande que la précédente. On garde un identifiant unique de 16 octets, mais les insertions se font en fin de table, comme avec un compteur.</p>
+        <pre class="sg-code">id uniqueidentifier
+   DEFAULT NEWSEQUENTIALID() PRIMARY KEY</pre>
+        <ol class="kv kv-seq"><li><b>3A</b>9F1C2E-C2A4-F011-8E30-00155D0A1B2C</li><li><b>3B</b>9F1C2E-C2A4-F011-8E30-00155D0A1B2C</li><li><b>3C</b>9F1C2E-C2A4-F011-8E30-00155D0A1B2C</li><li><b>3D</b>9F1C2E-C2A4-F011-8E30-00155D0A1B2C</li><li><b>3E</b>9F1C2E-C2A4-F011-8E30-00155D0A1B2C</li></ol></div>
+    </div>
+    <p class="enclair"><b>À savoir sur NEWSEQUENTIALID() :</b> il ne s'utilise que comme valeur par défaut d'une colonne, pas dans un SELECT ni dans le code applicatif. Les valeurs étant prévisibles, elles ne conviennent pas comme jeton secret (lien de réinitialisation de mot de passe, par exemple). La séquence peut repartir plus bas après un redémarrage du serveur. Enfin, un GUID « ordonné » généré par l'application, comme un UUID v7, n'est pas forcément dans l'ordre pour SQL Server, qui compare d'abord les derniers octets (voir plus bas « Le tri d'un GUID ne suit pas le texte »).</p>
+  </div>
+
+  <div class="sub">
+    <h3>Les insertions</h3>
+    <p>Les trois méthodes insèrent les mêmes lignes en parallèle. Avec une clé croissante, chaque nouvelle ligne va dans la dernière page ; quand elle est pleine, SQL Server en ouvre une nouvelle. Avec <code>NEWID()</code>, chaque ligne doit se ranger à sa place dans l'ordre de la clé, souvent dans une page déjà pleine : SQL Server la coupe en deux et déplace la moitié des lignes dans une nouvelle page, ajoutée en fin de fichier. Les DBA appellent cela un <b>page split</b>. Cliquer sur « Lancer » pour voir l'effet.</p>
+    <div class="toolbar">
+      <button class="btn primary" id="simPlay">Lancer</button>
+      <button class="btn" id="simOne">+1 ligne</button>
+      <button class="btn" id="simFifty">+50 lignes</button>
+      <button class="btn" id="simReset">Réinitialiser</button>
+      <span class="hint">Modèle réduit : 12 lignes par page avec une clé int, 10 avec un GUID, le rapport observé pour une ligne d'environ 60 octets.</span>
+    </div>
+    <div class="lanes" id="lanes"></div>
+    <p class="hint">Chaque case est une page de la table, rangée dans l'ordre de la clé. Le chiffre en gros indique combien de lignes elle contient, le petit « p12 » sa position sur le disque. Une page qui vient d'être coupée en deux clignote.</p>
+    <p class="enclair"><b>Ordre de lecture sur le disque :</b> pour lire la table dans l'ordre de la clé, SQL Server suit cette courbe. Une ligne droite veut dire des pages rangées les unes après les autres, lues d'un seul trait. Un zigzag veut dire des sauts permanents d'un bout à l'autre du fichier. Avec NEWID(), les pages sont aussi à moitié vides : il en faut plus pour les mêmes lignes, sur le disque comme en mémoire. NEWSEQUENTIALID() évite les coupures et le désordre, mais garde des lignes de 16 octets de clé.</p>
+  </div>
+
+  <div class="sub">
+    <h3>La clé voyage dans chaque index</h3>
+    <p>Pour chercher vite un client par son email, on crée un index secondaire sur <code>email</code>. C'est une petite liste triée par email, et à côté de chaque email, SQL Server recopie la clé primaire du client : c'est l'adresse qui permet de retrouver la ligne complète dans la table.</p>
+    <div class="card lookup-card">
+      <div class="toolbar"><div class="seg" id="lkSeg"><button data-pk="int" aria-pressed="true">Clé int</button><button data-pk="guid" aria-pressed="false">Clé uniqueidentifier</button></div><span class="hint">Cliquer sur un email pour suivre la recherche.</span></div>
+      <div class="lookup" id="lookup"></div>
+      <ol class="lk-steps" id="lkSteps">
+        <li data-s="1">SQL Server trouve l'email dans l'index, qui est trié par email.</li>
+        <li data-s="2">Il lit la clé primaire recopiée à côté de l'email.</li>
+        <li data-s="3">Il utilise cette clé pour aller chercher la ligne complète dans la table.</li>
+      </ol>
+    </div>
+    <p class="enclair"><b>Conséquence :</b> la clé primaire est recopiée dans <b>chaque ligne de chaque index secondaire</b>. Une table avec 4 index stocke donc la clé 5 fois. Avec un GUID de 16 octets au lieu d'un int de 4, c'est 12 octets de plus à chaque copie : des index plus gros, moins d'entrées par page d'index, plus de pages à lire pour chaque recherche.</p>
+    <div class="card keytrip" id="keytrip"></div>
+  </div>
+
+  <div class="sub">
+    <h3>Le tri d'un GUID ne suit pas le texte</h3>
+    <p>SQL Server ne trie pas un <code>uniqueidentifier</code> comme un texte : il compare d'abord le dernier bloc de 12 caractères, puis le bloc de 4 qui le précède, et remonte ainsi vers la gauche. Conséquence pratique : un GUID que l'application croit ordonné (UUID v7, ou trié par ordre alphabétique) peut se comporter comme un GUID aléatoire une fois en base, avec les pages coupées vues plus haut.</p>
+    <div class="toolbar"><button class="btn" id="guidGen">Générer d'autres GUID</button><span class="hint"><span class="gE mono" style="color:var(--c-guid)">rouge</span> : comparé en premier · <span class="mono" style="color:var(--c-num)">ocre</span> : en second</span></div>
+    <div class="guids card" id="guids"></div>
+  </div>
+</section>
+
+<!-- 03 -->
+<section class="sec" id="tri">
+  <div class="sec-head">
+    <p class="eyebrow">03 · Tri et mémoire</p>
+    <h2>varchar(255) ne coûte rien sur le disque, mais coûte en mémoire</h2>
+    <p class="lede">Un <code>varchar</code> ne stocke que sa longueur réelle. Mais avant d'exécuter un tri (ORDER BY) ou un regroupement (GROUP BY, certaines jointures), SQL Server réserve de la mémoire sans connaître ces longueurs. L'optimiseur, la partie de SQL Server qui prépare le plan d'exécution avant de lancer la requête, suppose chaque colonne variable remplie à moitié de sa taille déclarée, et compte 4 000 octets pour une colonne <code>(max)</code>.</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> déclarer <code>nvarchar(255)</code> « pour être tranquille » ne prend pas plus de place sur le disque. Mais au moment d'un tri, SQL Server se dit que chaque nom fait peut-être 255 caractères, et réserve la mémoire en conséquence. Sur un serveur partagé, ces réservations gonflées font attendre toutes les autres requêtes.</p>
+  <p class="query">SELECT * FROM Client ORDER BY nom;  -- sur les versions A et B de l'atelier</p>
+  <div class="card ctrls">
+    <div class="range"><label for="rngSortN">Lignes triées <b id="lblSortN"></b></label><input type="range" id="rngSortN" min="4" max="8" step="0.1" value="6.7"></div>
+    <div class="range"><label>Mémoire donnée à SQL Server</label>
+      <div class="seg" id="memSeg"><button data-mem="16">16 Go</button><button data-mem="64" aria-pressed="true">64 Go</button><button data-mem="256">256 Go</button></div></div>
+  </div>
+  <div class="sortgrid" id="sortgrid"></div>
+  <p class="hint">Ordre de grandeur, hypothèses simplifiées : environ 75 % de la mémoire du serveur disponible pour l'exécution des requêtes, 25 % de ce volume au maximum par requête. Une réservation trop grande fait attendre les autres requêtes (attente RESOURCE_SEMAPHORE). Une réservation trop petite fait déborder le tri dans tempdb, une base temporaire sur disque, bien plus lente que la mémoire.</p>
+  <p class="enclair"><b>Le gain le plus simple :</b> la réservation dépend de toutes les colonnes sélectionnées. Remplacer <code>SELECT *</code> par les seules colonnes utiles réduit d'autant la mémoire demandée, quels que soient les types.</p>
+</section>
+
+<!-- 04 -->
+<section class="sec" id="unicode">
+  <div class="sec-head">
+    <p class="eyebrow">04 · Texte et Unicode</p>
+    <h2>varchar ou nvarchar : une question d'alphabet</h2>
+    <p class="lede">Un ordinateur ne stocke que des nombres. Pour stocker du texte, il faut une table de correspondance entre chaque caractère et un nombre : c'est l'encodage. <code>varchar</code> et <code>nvarchar</code> n'utilisent pas la même table.</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> <code>varchar</code> utilise une table de 256 caractères, choisie par la <b>collation</b> de la base, le réglage qui fixe l'alphabet utilisé et les règles de comparaison (« é » vaut-il « e » ? « A » vaut-il « a » ?). En France, c'est en général Windows-1252 : l'alphabet latin, les accents français, le symbole €. Un caractère absent de cette table est remplacé par un <b>?</b>, sans aucune erreur. <code>nvarchar</code> utilise Unicode : tous les alphabets du monde, mais au moins 2 octets par caractère, même pour un simple « a ».</p>
+  <div class="card prec">
+    <div class="phonein"><label for="uniIn" class="hint">Texte à stocker</label><input id="uniIn" value="Zoë Lefèvre, 75 €" autocomplete="off" spellcheck="false"></div>
+    <div class="toolbar" id="uniPresets">
+      <button class="btn" data-u="Zoë Lefèvre, 75 €">Client français</button>
+      <button class="btn" data-u="Łukasz Wójcik">Client polonais</button>
+      <button class="btn" data-u="Γιώργος Παπαδόπουλος">Client grec</button>
+      <button class="btn" data-u="東京都 渋谷区">Adresse à Tokyo</button>
+      <button class="btn" data-u="zoe.lefevre@mail.fr">Email</button>
+    </div>
+    <div id="uniOut" style="display:grid;gap:16px"></div>
+  </div>
+  <div class="rules">
+    <div class="card"><h3>Le préfixe N devant les chaînes</h3><p>En SQL, <code>'Łukasz'</code> est une chaîne varchar et <code>N'Łukasz'</code> une chaîne Unicode. Sans le N, le texte est abîmé avant même d'arriver dans la colonne nvarchar : elle stocke alors « ?ukasz ».</p></div>
+    <div class="card"><h3>Quand choisir nvarchar</h3><p>Pour du texte saisi par des personnes du monde entier : noms, adresses, commentaires. Pas pour des codes, des références, des emails ou des numéros, qui ne contiennent que des caractères simples.</p></div>
+    <div class="card"><h3>La collation UTF-8</h3><p>Depuis SQL Server 2019, un varchar avec une collation se terminant par _UTF8 accepte tous les alphabets : 1 octet pour une lettre simple, 2 pour un « é », 3 pour un idéogramme.</p></div>
+  </div>
+</section>
+
+<!-- 05 -->
+<section class="sec" id="telephone">
+  <div class="sec-head">
+    <p class="eyebrow">05 · Téléphone</p>
+    <h2>Le numéro de téléphone, cas d'école</h2>
+    <p class="lede">Saisir un numéro pour voir ce que chaque déclaration stocke réellement, ce qu'elle coûte sur le disque et ce qu'elle fait réserver pour un tri.</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> le réflexe <code>varchar(255)</code> ou <code>nvarchar(255)</code> vient souvent de l'ORM ou du copier-coller. Un numéro au format international tient en 16 caractères, sans accent : <code>varchar(16)</code> suffit et documente l'intention.</p>
+  <div class="phonein"><label for="phoneIn" class="hint">Numéro saisi</label><input id="phoneIn" value="+33 6 12 34 56 78" autocomplete="off" spellcheck="false"></div>
+  <div class="tbl-wrap"><table id="phoneTbl"></table></div>
+  <p class="hint">Un numéro n'est pas un nombre : on ne l'additionne pas, il commence par 0 ou par +. Le format E.164 (un +, au plus 15 chiffres) tient dans un <code>varchar(16)</code>, se compare et s'indexe proprement.</p>
+</section>
+
+<!-- 05 -->
+<section class="sec" id="dates">
+  <div class="sec-head">
+    <p class="eyebrow">06 · Dates et heures</p>
+    <h2>Les types de date, la partie méconnue</h2>
+    <p class="lede"><code>datetime</code> est rarement le bon choix : 8 octets, une précision de 3,33 ms avec arrondi, et une plage qui commence en 1753. Glisser le type le plus adapté sur chaque besoin (ou cliquer un type puis une case).</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> SQL Server propose un type par besoin. Une date seule n'a pas besoin d'heure (<code>date</code>, 3 octets), une heure seule n'a pas besoin de date (<code>time</code>), et un horodatage moderne s'écrit en <code>datetime2</code>, dont on choisit la précision.</p>
+  <div class="tbl-wrap"><table><thead><tr><th>Type</th><th>Contient</th><th>Exemple</th><th>Octets</th></tr></thead><tbody>
+    <tr><td class="mono">date</td><td>une date seule</td><td class="mono">2026-10-09</td><td class="num">3</td></tr>
+    <tr><td class="mono">time(p)</td><td>une heure seule ; p = nombre de chiffres après la seconde (0 à 7)</td><td class="mono">14:37:05</td><td class="num">3 à 5</td></tr>
+    <tr><td class="mono">smalldatetime</td><td>date et heure à la minute, de 1900 à 2079</td><td class="mono">2026-10-09 14:37</td><td class="num">4</td></tr>
+    <tr><td class="mono">datetime</td><td>l'ancien type historique, précision 3,33 ms</td><td class="mono">2026-10-09 14:37:05.127</td><td class="num">8</td></tr>
+    <tr><td class="mono">datetime2(p)</td><td>le remplaçant moderne de datetime, de l'an 1 à 9999</td><td class="mono">2026-10-09 14:37:05.128</td><td class="num">6 à 8</td></tr>
+    <tr><td class="mono">datetimeoffset(p)</td><td>comme datetime2, avec le décalage par rapport à UTC</td><td class="mono">2026-10-09 14:37:05 +02:00</td><td class="num">8 à 10</td></tr>
+  </tbody></table></div>
+  <div class="toolbar"><div class="dtpal" id="dtpal"></div></div>
+  <div class="toolbar"><span class="score" id="dtScore"></span><button class="btn" id="dtSolve">Afficher les réponses</button><button class="btn" id="dtClear">Recommencer</button></div>
+  <div class="needs" id="needs"></div>
+
+  <div class="sub">
+    <h3>La précision se règle, et se paie au demi-octet près</h3>
+    <div class="card prec">
+      <div class="toolbar">
+        <div class="seg" id="precType"><button data-t="datetime2" aria-pressed="true">datetime2(p)</button><button data-t="time">time(p)</button><button data-t="datetimeoffset">datetimeoffset(p)</button></div>
+      </div>
+      <div class="range"><label for="rngPrec">Précision p <b id="lblPrec"></b></label><input type="range" id="rngPrec" min="0" max="7" step="1" value="7"></div>
+      <div class="readout" id="precOut"></div>
+      <div class="stats" id="precStats"></div>
+    </div>
+  </div>
+
+  <div class="sub">
+    <h3>Le piège de 23:59:59.999</h3>
+    <p><code>datetime</code> arrondit les millisecondes à .000, .003 ou .007. Une borne de fin écrite <code>23:59:59.999</code> devient minuit le lendemain, et un <code>BETWEEN</code>, qui inclut ses deux bornes, ramène alors aussi les lignes de minuit le lendemain. La bonne écriture reste <code>&gt;= jour AND &lt; jour + 1</code>.</p>
+    <div class="card prec">
+      <div class="range"><label for="rngMs">Millisecondes saisies <b id="lblMs"></b></label><input type="range" id="rngMs" min="0" max="999" step="1" value="999"></div>
+      <div class="round" id="roundOut"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 07 -->
+<section class="sec" id="requetes">
+  <div class="sec-head">
+    <p class="eyebrow">07 · Requêtes</p>
+    <h2>Écrire des conditions qui profitent de l'index</h2>
+    <p class="lede">Un index ne sert que si SQL Server peut utiliser son ordre. Une condition qui le permet est dite <b>sargable</b> (de l'anglais <i>Search ARGument ABLE</i>).</p>
+  </div>
+  <p class="enclair"><b>En clair :</b> un index, c'est un annuaire trié par nom. Pour trouver tous les « Martin », on ouvre l'annuaire à la lettre M et on s'arrête après le dernier Martin. Pour trouver tous les noms qui <i>contiennent</i> « mar », l'ordre ne sert à rien : il faut lire l'annuaire en entier. La règle : la colonne doit apparaître <b>seule</b> dans la condition, sans fonction ni calcul autour.</p>
+  <div class="toolbar"><div class="seg" id="sgSeg"></div><button class="btn primary" id="sgPlay">Rejouer la comparaison</button></div>
+  <div class="sg-grid" id="sgGrid"></div>
+  <p class="enclair" id="sgWhy"></p>
+  <p class="hint">Chaque case est une entrée de l'index, rangée dans l'ordre de la colonne. Jaune : entrée lue. Vert : entrée qui répond à la condition. Contour bleu : endroit où SQL Server saute directement.</p>
+  <p class="enclair"><b>Le vérifier soi-même :</b> dans SSMS, activer « Inclure le plan d'exécution réel » (Ctrl+M) puis lancer la requête. Une lecture complète apparaît sous le nom <b>Index Scan</b> (ou Clustered Index Scan, Table Scan), un accès direct sous le nom <b>Index Seek</b>. Un scan n'est pas toujours un problème sur une petite table, mais sur des millions de lignes il se paie à chaque appel.</p>
+</section>
+
+<!-- 08 -->
+<section class="sec" id="memo">
+  <div class="sec-head">
+    <p class="eyebrow">08 · Mémo</p>
+    <h2>Mémo des tailles</h2>
+  </div>
+  <div class="tbl-wrap"><table id="memoTbl"></table></div>
+  <div class="rules">
+    <div class="card"><h3>Le plus petit type qui contient toutes les valeurs futures</h3><p>Un statut à 5 valeurs tient dans un tinyint, un compteur de commandes dans un int. Prévoir la croissance, sans réserver « au cas où ».</p></div>
+    <div class="card"><h3>Une longueur déclarée honnête</h3><p>Elle ne change rien au disque, mais tout aux estimations mémoire, à la taille maximale d'une clé d'index (900 octets pour la clé primaire, 1 700 pour un index secondaire) et à la qualité des données.</p></div>
+    <div class="card"><h3>nvarchar seulement si nécessaire</h3><p>Deux octets par caractère. Un email, un code postal ou un numéro de téléphone n'ont pas besoin d'Unicode (voir la section 04).</p></div>
+    <div class="card"><h3>Pas de fonction autour d'une colonne filtrée</h3><p>Comparer la colonne seule, et déplacer le calcul de l'autre côté : bornes de dates plutôt que YEAR(), montant &gt; 90 plutôt que montant + 10 &gt; 100 (voir la section 07).</p></div>
+    <div class="card"><h3>Les mêmes types partout</h3><p>Une jointure entre un int et un varchar, ou un paramètre nvarchar sur une colonne varchar, force une conversion implicite qui peut empêcher l'usage d'un index.</p></div>
+  </div>
+  <div class="sub">
+    <h3>Lexique pour parler avec un DBA</h3>
+    <div class="tbl-wrap"><table><thead><tr><th>Terme</th><th>En clair</th></tr></thead><tbody>
+      <tr><td>Page</td><td>Bloc de 8 Ko dans lequel SQL Server range les lignes. C'est l'unité de lecture et de mise en cache.</td></tr>
+      <tr><td>Index clusterisé</td><td>La table elle-même, rangée dans l'ordre de sa clé primaire. Une seule par table.</td></tr>
+      <tr><td>Index non clusterisé</td><td>Un index secondaire : une copie triée de quelques colonnes, avec la clé primaire pour retrouver la ligne.</td></tr>
+      <tr><td>Page split</td><td>Page pleine coupée en deux pour faire de la place à une insertion au milieu. Typique des clés GUID aléatoires.</td></tr>
+      <tr><td>Fragmentation</td><td>Pages qui ne se suivent plus sur le disque, ou à moitié vides. Plus de pages à lire pour les mêmes données.</td></tr>
+      <tr><td>Index Seek / Index Scan</td><td>Accès direct au bon endroit de l'index, ou lecture de l'index en entier. Visible dans le plan d'exécution.</td></tr>
+      <tr><td>Sargable</td><td>Condition écrite de façon à permettre un Index Seek : la colonne seule, sans fonction ni calcul autour.</td></tr>
+      <tr><td>Conversion implicite</td><td>Conversion de type ajoutée par SQL Server quand deux valeurs comparées n'ont pas le même type. Peut empêcher l'usage d'un index.</td></tr>
+      <tr><td>Memory grant</td><td>Mémoire réservée par une requête avant son exécution, pour ses tris et regroupements.</td></tr>
+      <tr><td>tempdb</td><td>Base temporaire sur disque où débordent les tris qui ne tiennent pas en mémoire.</td></tr>
+      <tr><td>Collation</td><td>Réglage qui fixe l'alphabet d'un varchar et les règles de comparaison (casse, accents).</td></tr>
+      <tr><td>Plan d'exécution</td><td>La recette choisie par SQL Server pour exécuter une requête : quels index, dans quel ordre, avec combien de mémoire.</td></tr>
+    </tbody></table></div>
+  </div>
+  <footer>Calculs simplifiés pour la démonstration : tables classiques sans compression, colonnes NOT NULL, textes stockés dans la ligne. La compression de données et les index columnstore (stockage par colonnes, pour l'analytique) changent ces chiffres, pas les principes.</footer>
+</section>
+</div>
+
+<script>
+(()=>{
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const nf=new Intl.NumberFormat('fr-FR');
+const nf1=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:1});
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fmtB(b){const u=['o','Ko','Mo','Go','To','Po'];let i=0;while(b>=1024&&i<u.length-1){b/=1024;i++;}return (i===0?nf.format(Math.round(b)):nf1.format(b))+' '+u[i];}
+function fmtN(n){if(n>=1e9)return nf1.format(n/1e9)+' Md';if(n>=1e6)return nf1.format(n/1e6)+' M';if(n>=1e3)return nf1.format(n/1e3)+' k';return nf.format(n);}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+
+/* ---------- catalogue ---------- */
+const T={
+ 'tinyint':{fam:'int',size:1},'smallint':{fam:'int',size:2},'int':{fam:'int',size:4},'bigint':{fam:'int',size:8},'bit':{fam:'int',bit:true},
+ 'decimal(9,2)':{fam:'num',size:5},'decimal(18,2)':{fam:'num',size:9},'money':{fam:'num',size:8},'float':{fam:'num',size:8},
+ 'uniqueidentifier':{fam:'guid',size:16},
+ 'char':{fam:'str',str:'char',n:10},'varchar':{fam:'str',str:'varchar',n:50,avg:12},'nchar':{fam:'str',str:'nchar',n:10},'nvarchar':{fam:'str',str:'nvarchar',n:50,avg:12},
+ 'date':{fam:'date',size:3},'time(0)':{fam:'date',size:3},'time(7)':{fam:'date',size:5},'smalldatetime':{fam:'date',size:4},'datetime':{fam:'date',size:8},
+ 'datetime2(0)':{fam:'date',size:6},'datetime2(3)':{fam:'date',size:7},'datetime2(7)':{fam:'date',size:8},'datetimeoffset(7)':{fam:'date',size:10}
+};
+const GROUPS=[['Entiers',['tinyint','smallint','int','bigint','bit']],['Décimaux',['decimal(9,2)','decimal(18,2)','money','float']],['Identifiant',['uniqueidentifier']],['Chaînes',['char','varchar','nchar','nvarchar']],['Dates',['date','time(0)','time(7)','smalldatetime','datetime','datetime2(0)','datetime2(3)','datetime2(7)','datetimeoffset(7)']]];
+function szLabel(t){const d=T[t];if(d.bit)return '1 bit';if(d.str==='char')return 'n o';if(d.str==='nchar')return '2n o';if(d.str==='varchar')return 'lg+2 o';if(d.str==='nvarchar')return '2lg+2 o';return d.size+' o';}
+
+const isVar=c=>{const s=T[c.type].str;return s==='varchar'||s==='nvarchar';};
+function colBytes(c){const d=T[c.type];if(d.bit)return 0;if(d.str==='char')return c.n;if(d.str==='nchar')return 2*c.n;if(d.str==='varchar')return Math.min(c.avg,c.n);if(d.str==='nvarchar')return 2*Math.min(c.avg,c.n);return d.size;}
+function colEst(c){const d=T[c.type];if(d.str==='varchar')return Math.ceil(c.n/2);if(d.str==='nvarchar')return c.n;return colBytes(c);}
+function colType(c){return T[c.type].str?`${c.type}(${c.n})`:c.type;}
+
+function calc(cols){
+  const segs=[{label:'En-tête',bytes:4,fam:'over'}];let fixed=0,bits=0,vData=0,vEst=0;
+  cols.forEach(c=>{const d=T[c.type];if(d.bit){bits++;return;}if(!isVar(c)){const b=colBytes(c);fixed+=b;segs.push({label:c.name,bytes:b,fam:d.fam});}});
+  if(bits){const b=Math.ceil(bits/8);fixed+=b;segs.push({label:bits+' bit'+(bits>1?'s':''),bytes:b,fam:'int'});}
+  const nb=2+Math.ceil(Math.max(cols.length,1)/8);segs.push({label:'Marqueurs NULL',bytes:nb,fam:'over'});
+  const vc=cols.filter(isVar);let vh=0;
+  if(vc.length){vh=2+2*vc.length;segs.push({label:'Positions des textes',bytes:vh,fam:'over'});vc.forEach(c=>{const b=colBytes(c);vData+=b;vEst+=colEst(c);segs.push({label:c.name,bytes:b,fam:'str'});});}
+  const ov=4+nb+vh;const row=Math.max(ov+fixed+vData,9);const est=ov+fixed+vEst;
+  const over=row>8060;const rpp=over?1:Math.floor(8096/(row+2));
+  const pk=cols[0]?colBytes(cols[0])+(isVar(cols[0])?2:0):0;
+  return {segs,row,est,rpp,pk,over};
+}
+
+/* ---------- état atelier ---------- */
+let uid=1;
+const mk=(name,type,n,avg)=>({id:uid++,name,type,n:n??T[type].n,avg:avg??T[type].avg});
+const PRESETS={
+ client:{A:[mk('id','uniqueidentifier'),mk('nom','nvarchar',255,8),mk('prenom','nvarchar',255,7),mk('telephone','nvarchar',255,17),mk('email','nvarchar',255,24),mk('code_postal','nvarchar',255,5),mk('date_naissance','datetime'),mk('actif','int'),mk('newsletter','int'),mk('cree_le','datetime'),mk('modifie_le','datetime')],
+         B:[mk('id','int'),mk('nom','nvarchar',80,8),mk('prenom','nvarchar',50,7),mk('telephone','varchar',16,12),mk('email','varchar',254,24),mk('code_postal','char',5),mk('date_naissance','date'),mk('actif','bit'),mk('newsletter','bit'),mk('cree_le','datetime2(0)'),mk('modifie_le','datetime2(0)')]},
+ commande:{A:[mk('id','uniqueidentifier'),mk('commande_id','uniqueidentifier'),mk('produit_id','uniqueidentifier'),mk('quantite','int'),mk('prix_unitaire','float'),mk('remise','float'),mk('statut','nvarchar',50,8),mk('cree_le','datetime')],
+         B:[mk('id','bigint'),mk('commande_id','int'),mk('produit_id','int'),mk('quantite','smallint'),mk('prix_unitaire','decimal(9,2)'),mk('remise','decimal(9,2)'),mk('statut','tinyint'),mk('cree_le','datetime2(0)')]},
+};
+const clone=a=>a.map(c=>({...c,id:uid++}));
+const S={A:[],B:[],sel:null,active:'A',N:1e8,nIx:3};
+function loadPreset(k){if(k==='vide'){S.A=[];S.B=[];}else{S.A=clone(PRESETS[k].A);S.B=clone(PRESETS[k].B);}S.sel=null;renderBuilder(true);}
+
+/* palette */
+const pal=$('#palette');
+pal.innerHTML=GROUPS.map(([g,ts])=>`<div class="pgroup"><span>${g}</span>${ts.map(t=>`<button class="chip f-${T[t].fam}" data-type="${t}">${t}<span class="sz">${szLabel(t)}</span></button>`).join('')}</div>`).join('');
+
+/* versions skeleton */
+['A','B'].forEach(v=>{
+  $('#ver'+v).innerHTML=`<div class="ver-head"><h3>Version ${v}</h3><span class="tag" id="tag${v}"></span></div>
+  <div class="dropzone" data-drop="zone" data-ver="${v}" id="zone${v}"></div>
+  <div class="editor" id="ed${v}" hidden></div>
+  <div class="strip-wrap"><div class="strip" id="strip${v}"></div><div class="strip-scale"><span>0</span><span id="stripMax${v}"></span></div></div>
+  <div class="pagebox"><p class="hint">Une page de 8 Ko et ce qu'elle contient : chaque couche est une ligne de la table.</p>
+  <div class="pageviz"><div class="page" id="pg${v}" aria-label="Page de 8 Ko de la version ${v}"></div><div class="pnotes" id="pn${v}"></div></div>
+  <div class="legend"><span class="f-int">entiers</span><span class="f-num">décimaux</span><span class="f-guid">GUID</span><span class="f-str">chaînes</span><span class="f-date">dates</span><span class="f-over">surcoût technique</span></div></div>
+  <div class="disk"><div class="ver-head"><span class="hint">Sur le disque, pour <span class="dkN"></span> lignes</span><b class="mono" id="dkv${v}"></b></div><div class="icons" id="dk${v}"></div><p class="hint dkK"></p></div>
+  <p class="warnline" id="warn${v}" hidden></p>
+  <dl class="stats" id="st${v}"></dl>`;
+  $('#ver'+v).addEventListener('pointerdown',()=>{S.active=v;markActive();});
+});
+function markActive(){['A','B'].forEach(v=>$('#ver'+v).classList.toggle('active',S.active===v));}
+
+function renderZone(v){
+  const z=$('#zone'+v);
+  z.innerHTML=S[v].map((c,i)=>`<button class="chip f-${T[c.type].fam}${S.sel&&S.sel.id===c.id?' sel':''}" data-col="${c.id}" data-ver="${v}" title="${esc(colType(c))}">${i===0?'<span class="pk">PK</span>':''}<span class="nm">${esc(c.name)}</span><span class="sz">${esc(colType(c))} · ${T[c.type].bit?'1 bit':colBytes(c)+(isVar(c)?'+2':'')+' o'}</span></button>`).join('');
+}
+function renderEditor(v){
+  const ed=$('#ed'+v);const c=S.sel&&S.sel.ver===v?S[v].find(x=>x.id===S.sel.id):null;
+  if(!c){ed.hidden=true;ed.innerHTML='';return;}
+  ed.hidden=false;const d=T[c.type];
+  ed.innerHTML=`<label>Nom<input id="ed${v}-name" value="${esc(c.name)}"></label>
+  <label>Type<select id="ed${v}-type">${Object.keys(T).map(t=>`<option${t===c.type?' selected':''}>${t}</option>`).join('')}</select></label>
+  ${d.str?`<label>Longueur déclarée n<input id="ed${v}-n" type="number" min="1" max="8000" value="${c.n}"></label>`:''}
+  ${isVar(c)?`<label>Longueur moyenne réelle<input id="ed${v}-avg" type="number" min="0" max="8000" value="${c.avg}"></label>`:''}
+  <div class="acts"><button class="btn" data-act="del">Supprimer</button><button class="btn" data-act="close">Fermer</button></div>`;
+  const upd=()=>{renderZone(v);renderVer(v,false);renderCompare();renderSort();};
+  $(`#ed${v}-name`).oninput=e=>{c.name=e.target.value||'col';upd();};
+  $(`#ed${v}-type`).onchange=e=>{c.type=e.target.value;const nd=T[c.type];if(nd.str){c.n=c.n||nd.n;c.avg=c.avg??nd.avg;}renderEditor(v);renderZone(v);renderVer(v,true);renderCompare();renderSort();};
+  const ni=$(`#ed${v}-n`);if(ni)ni.oninput=e=>{c.n=Math.max(1,Math.min(8000,+e.target.value||1));upd();};
+  const ai=$(`#ed${v}-avg`);if(ai)ai.oninput=e=>{c.avg=Math.max(0,Math.min(8000,+e.target.value||0));upd();};
+  ed.querySelector('[data-act=del]').onclick=()=>{S[v]=S[v].filter(x=>x.id!==c.id);S.sel=null;renderBuilder(true);};
+  ed.querySelector('[data-act=close]').onclick=()=>{S.sel=null;renderZone(v);renderEditor(v);};
+}
+
+const famVar={int:'--c-int',num:'--c-num',guid:'--c-guid',str:'--c-str',date:'--c-date',over:'--c-over'};
+const R={};
+function renderVer(v,anim){
+  const r=calc(S[v]);R[v]=r;
+  $('#strip'+v).innerHTML=r.segs.map(s=>`<i style="--fam:var(${famVar[s.fam]});flex:0 0 ${s.bytes/r.row*100}%" title="${esc(s.label)} : ${s.bytes} o">${s.bytes/r.row>0.07?esc(s.label):''}</i>`).join('');
+  $('#stripMax'+v).textContent=r.row+' o par ligne';
+  $('#tag'+v).textContent=S[v].length+' colonne'+(S[v].length>1?'s':'');
+  const w=$('#warn'+v);w.hidden=!r.over;w.textContent=r.over?'Ligne de plus de 8 060 octets : les valeurs variables partent en pages de débordement (ROW_OVERFLOW).':'';
+  const N=S.N,pages=Math.ceil(N/r.rpp),data=pages*8192;
+  const ixRow=7+20+r.pk,ixRpp=Math.floor(8096/(ixRow+2)),ix=S.nIx*Math.ceil(N/ixRpp)*8192;
+  r.data=data;r.ix=ix;r.total=data+ix;r.pages=pages;
+  $('#st'+v).innerHTML=[['Taille d\'une ligne',r.row+' o'],['Lignes par page',nf.format(r.rpp)],['Pages',fmtN(pages)],['Table',fmtB(data)],['Index secondaires ('+S.nIx+')',fmtB(ix)],['Total',fmtB(data+ix)]].map(([a,b])=>`<div><dt>${a}</dt><dd>${b}</dd></div>`).join('');
+  drawPage(v,anim);
+}
+
+/* page : lignes empilées en couches */
+function drawPage(v,anim){
+  const r=R[v],box=$('#pg'+v),notes=$('#pn'+v);if(!r||!box)return;
+  const pct=b=>b/8192*100;
+  let acc=0;const stops=r.segs.map(s=>{const a=acc/r.row*100;acc+=s.bytes;return `var(${famVar[s.fam]}) ${a}% ${acc/r.row*100}%`;});
+  const grad=`linear-gradient(90deg,${stops.join(',')})`;
+  const empty=!S[v].length;
+  const n=empty?0:(r.over?1:r.rpp),rowH=Math.min(r.row,8192-96),rowsH=n*rowH,slot=2*n,free=Math.max(0,8192-96-rowsH-slot);
+  const animOn=anim&&!reduce;
+  let h=`<div class="pz head" style="top:0;height:${pct(96)}%" title="En-tête de page : 96 o"></div>`;
+  for(let k=0;k<n;k++)h+=`<div class="pz row${animOn?' in':''}" style="top:${pct(96+k*rowH)}%;height:${pct(rowH)}%;background:${grad};${animOn?`animation-delay:${Math.round(Math.min(k*(600/n),600))}ms`:''}" title="Ligne ${k+1} : ${r.row} o"></div>`;
+  if(free>0)h+=`<div class="pz free" style="top:${pct(96+rowsH)}%;height:${pct(free)}%" title="Espace perdu : ${free} o"></div>`;
+  if(slot)h+=`<div class="pz slot" style="bottom:0;height:${pct(slot)}%" title="Tableau d'emplacements : ${slot} o"></div>`;
+  box.innerHTML=h;box.classList.toggle('thin',rowH/8192*420<4);
+  if(empty){notes.innerHTML=`<div class="grp mid">Page vide : ajouter des colonnes.</div>`;return;}
+  notes.innerHTML=`<div class="grp top"><span>En-tête de page <b>96 o</b></span><span>puis ligne 1 : <b>${r.row} o</b></span></div>
+  <div class="grp mid"><span class="big2">${nf.format(n)}</span><span>ligne${n>1?'s':''} tiennent dans la page</span><span>${r.over?'Ligne trop grande pour une page.':`${nf.format(n)} × ${r.row} o = ${nf.format(rowsH)} o`}</span></div>
+  <div class="grp bot">${free>0?`<span>Reste <b>${free} o</b>${free<r.row+2?', trop peu pour une ligne de plus':''}</span>`:''}<span>Sommaire de la page <b>${slot} o</b> (2 o par ligne, pour retrouver chaque ligne)</span></div>`;
+}
+
+function renderCompare(){
+  const a=R.A,b=R.B;const el=$('#compare');if(!a||!b)return;
+  const K=Math.max(1,Math.ceil(Math.max(a.pages,b.pages)/120));
+  [['A',a],['B',b]].forEach(([v,r])=>{const cnt=S[v].length?Math.ceil(r.pages/K):0;$('#dk'+v).innerHTML='<i></i>'.repeat(cnt);$('#dkv'+v).textContent=S[v].length?fmtN(r.pages)+' pages · '+fmtB(r.data):'';});
+  $$('.dkN').forEach(e=>e.textContent=fmtN(S.N));
+  $$('.dkK').forEach(e=>e.textContent=`1 carré = ${fmtN(K)} page${K>1?'s':''} de 8 Ko (${fmtB(K*8192)}), même échelle pour A et B.`);
+  const mx=Math.max(a.total,b.total,1);
+  const bar=(v,r)=>`<div class="cbar"><b>${v}</b><div class="track"><i style="width:${r.data/mx*100}%;background:var(--accent)" title="Table"></i><i style="width:${r.ix/mx*100}%;background:color-mix(in srgb,var(--accent) 45%,var(--surface-2))" title="Index"></i></div><span>${fmtB(r.total)}</span></div>`;
+  let txt='';
+  if(S.A.length&&S.B.length){
+    const d=(b.total-a.total)/a.total*100;
+    txt=d<0?`Pour ${fmtN(S.N)} lignes, la version B occupe <b>${nf1.format(-d)} %</b> de moins que A, soit <b>${fmtB(a.total-b.total)}</b> en moins à lire, sauvegarder et garder en cache.`:
+      d>0?`Pour ${fmtN(S.N)} lignes, la version B occupe <b>${nf1.format(d)} %</b> de plus que A (<b>${fmtB(b.total-a.total)}</b>).`:`Les deux versions occupent la même place.`;
+  } else txt='Remplir les deux versions pour les comparer.';
+  el.innerHTML=`<h3>Espace total, table et index</h3>${bar('A',a)}${bar('B',b)}<p class="verdict">${txt}</p><p class="hint">Index secondaires : hypothèse d'une colonne indexée de 20 octets, plus la clé clusterisée de chaque version. Foncé : table, clair : index.</p>`;
+}
+
+function renderBuilder(anim){['A','B'].forEach(v=>{renderZone(v);renderEditor(v);renderVer(v,anim);});renderCompare();renderSort();markActive();}
+
+/* sliders atelier */
+const rngN=$('#rngN'),rngIx=$('#rngIx');
+function syncN(){S.N=Math.round(Math.pow(10,+rngN.value));$('#lblN').textContent=fmtN(S.N);S.nIx=+rngIx.value;$('#lblIx').textContent=S.nIx;}
+rngN.oninput=rngIx.oninput=()=>{syncN();['A','B'].forEach(v=>renderVer(v,false));renderCompare();};
+$$('[data-preset]').forEach(b=>b.onclick=()=>loadPreset(b.dataset.preset));
+
+/* ---------- glisser-déposer générique ---------- */
+let drag=null;
+function zoneAt(x,y){const el=document.elementFromPoint(x,y);return el?el.closest('[data-drop]'):null;}
+function dropIndex(zone,x,y){const ch=$$('.chip',zone);let idx=0;ch.forEach((c,i)=>{const r=c.getBoundingClientRect();if(y>r.bottom||(y>=r.top&&x>r.left+r.width/2))idx=i+1;});return idx;}
+let overEl=null;
+function setOver(z){if(overEl===z)return;if(overEl)overEl.classList.remove('over','trash-over');overEl=z;if(z)z.classList.add(z.dataset.drop==='trash'?'trash-over':'over');}
+document.addEventListener('pointerdown',e=>{
+  if(e.button!==undefined&&e.button!==0)return;
+  const chip=e.target.closest('.chip');if(!chip)return;
+  let payload=null;
+  if(chip.dataset.type&&chip.closest('#palette'))payload={kind:'type',type:chip.dataset.type};
+  else if(chip.dataset.col)payload={kind:'col',ver:chip.dataset.ver,id:+chip.dataset.col};
+  else if(chip.dataset.dt)payload={kind:'dt',type:chip.dataset.dt};
+  if(!payload)return;
+  drag={payload,el:chip,x0:e.clientX,y0:e.clientY,moved:false,ghost:null};
+});
+document.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  if(!drag.moved){if(Math.hypot(e.clientX-drag.x0,e.clientY-drag.y0)<6)return;drag.moved=true;const g=drag.el.cloneNode(true);g.classList.add('ghost');g.classList.remove('sel');document.body.appendChild(g);drag.ghost=g;drag.el.classList.add('dragging');}
+  drag.ghost.style.transform=`translate(${e.clientX-20}px,${e.clientY-16}px)`;
+  const z=zoneAt(e.clientX,e.clientY);
+  const ok=z&&((drag.payload.kind==='dt')===(z.dataset.drop==='slot'))&&!(drag.payload.kind==='type'&&z.dataset.drop==='trash');
+  setOver(ok?z:null);
+  e.preventDefault();
+});
+function endDrag(e,cancel){
+  if(!drag)return;const d=drag;drag=null;setOver(null);
+  if(d.ghost)d.ghost.remove();d.el.classList.remove('dragging');
+  if(cancel)return;
+  if(!d.moved){onChipClick(d.payload);return;}
+  const z=zoneAt(e.clientX,e.clientY);onDrop(d.payload,z,e.clientX,e.clientY);
+}
+document.addEventListener('pointerup',e=>endDrag(e,false));
+document.addEventListener('pointercancel',e=>endDrag(e,true));
+// clavier : Entrée / Espace sur une puce
+document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('chip')){e.preventDefault();const c=e.target;const p=c.dataset.type&&c.closest('#palette')?{kind:'type',type:c.dataset.type}:c.dataset.col?{kind:'col',ver:c.dataset.ver,id:+c.dataset.col}:c.dataset.dt?{kind:'dt',type:c.dataset.dt}:null;if(p)onChipClick(p);}});
+
+function newCol(type,v){const base=T[type].fam==='date'?'date':T[type].fam==='str'?'texte':'col';const n=S[v].filter(c=>c.name.startsWith(base)).length+1;return mk(base+'_'+n,type);}
+function onChipClick(p){
+  if(p.kind==='type'){const v=S.active;const c=newCol(p.type,v);S[v].push(c);S.sel={ver:v,id:c.id};renderBuilder(true);}
+  else if(p.kind==='col'){S.active=p.ver;S.sel=(S.sel&&S.sel.id===p.id)?null:{ver:p.ver,id:p.id};renderZone('A');renderZone('B');renderEditor('A');renderEditor('B');markActive();}
+  else if(p.kind==='dt'){selDt=selDt===p.type?null:p.type;renderDtPal();}
+}
+function onDrop(p,z,x,y){
+  if(p.kind==='type'&&z&&z.dataset.drop==='zone'){const v=z.dataset.ver;const c=newCol(p.type,v);S[v].splice(dropIndex(z,x,y),0,c);S.active=v;S.sel={ver:v,id:c.id};renderBuilder(true);}
+  else if(p.kind==='col'&&z){
+    const src=S[p.ver];const i=src.findIndex(c=>c.id===p.id);if(i<0)return;
+    if(z.dataset.drop==='trash'){src.splice(i,1);if(S.sel&&S.sel.id===p.id)S.sel=null;renderBuilder(true);return;}
+    if(z.dataset.drop==='zone'){let idx=dropIndex(z,x,y);const [c]=src.splice(i,1);const v=z.dataset.ver;if(v===p.ver&&idx>i)idx--;S[v].splice(idx,0,c);if(S.sel&&S.sel.id===c.id)S.sel.ver=v;S.active=v;renderBuilder(true);}
+  }
+  else if(p.kind==='dt'&&z&&z.dataset.drop==='slot'){answers[z.dataset.need]=p.type;renderNeeds();}
+}
+
+/* ---------- 02 : simulation d'insertions ---------- */
+function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const LANES=[{k:'int',t:'int IDENTITY',s:'clé croissante · 4 o',mode:'seq',cap:12},{k:'guid',t:'uniqueidentifier · NEWID()',s:'clé aléatoire · 16 o',mode:'rand',cap:10},{k:'seq',t:'uniqueidentifier · NEWSEQUENTIALID()',s:'clé croissante · 16 o',mode:'seq',cap:10}];
+let rnd=mulberry(42),lanes,MAXR=600;
+function resetSim(){lanes=LANES.map(L=>({...L,pages:[{id:1,keys:[]}],next:2,splits:0,moved:0,rows:0,ctr:0,hit:null,flash:new Set()}));}
+function insert(l){
+  l.flash.clear();
+  let k,idx;
+  if(l.mode==='seq'){k=++l.ctr;idx=l.pages.length-1;}
+  else{k=rnd();idx=0;for(let i=l.pages.length-1;i>=0;i--){if(l.pages[i].keys.length&&l.pages[i].keys[0]<=k){idx=i;break;}}}
+  let p=l.pages[idx];
+  if(p.keys.length>=l.cap){
+    if(l.mode==='seq'){p={id:l.next++,keys:[]};l.pages.push(p);}
+    else{const half=Math.floor(l.cap/2);const np={id:l.next++,keys:p.keys.splice(half)};l.pages.splice(idx+1,0,np);l.splits++;l.moved+=np.keys.length;l.flash.add(p.id);l.flash.add(np.id);if(np.keys[0]<=k)p=np;}
+  }
+  let j=p.keys.findIndex(x=>x>k);if(j<0)j=p.keys.length;p.keys.splice(j,0,k);l.rows++;l.hit=p.id;
+}
+function renderLanes(){
+  $('#lanes').innerHTML=lanes.map(l=>{
+    const n=l.pages.length;let jumps=0;
+    l.pages.forEach((p,i)=>{if(i>0&&p.id!==l.pages[i-1].id+1)jumps++;});
+    const pg=l.pages.map(p=>`<div class="pg${p.id===l.hit?' hit':''}${l.flash.has(p.id)?' split':''}" title="Page n°${p.id} sur le disque : ${p.keys.length} lignes sur ${l.cap} possibles"><i style="height:${p.keys.length/l.cap*100}%"></i><span>p${p.id}</span><em>${p.keys.length}</em></div>`).join('');
+    const avg=l.rows/n,frag=n>1?jumps/(n-1)*100:0,maxId=Math.max(...l.pages.map(p=>p.id));
+    const W=300,H=70;
+    const pts=l.pages.map((p,i)=>`${n>1?(i/(n-1)*W).toFixed(1):0},${(H-4-(maxId>1?(p.id-1)/(maxId-1):0)*(H-8)).toFixed(1)}`).join(' ');
+    return `<div class="lane card lane-${l.k}"><div><h3>${l.t}</h3><p class="hint">${l.s}</p></div>
+    <div class="ls"><span>Lignes <b>${nf.format(l.rows)}</b></span><span>Pages <b>${n}</b></span><span>Lignes par page <b>${nf1.format(avg)} / ${l.cap}</b></span><span>Pages coupées <b>${l.splits}</b></span><span>Lignes déplacées <b>${l.moved}</b></span><span>Pages en désordre <b>${nf1.format(frag)} %</b></span></div>
+    <div class="pages">${pg}</div>
+    <div class="diskorder"><span class="hint">Ordre de lecture sur le disque</span>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Position sur le disque de chaque page, dans l'ordre de la clé"><line x1="0" y1="${H-4}" x2="${W}" y2="4" class="ideal"/><polyline points="${pts}" fill="none"/></svg>
+      <div class="ax"><span>1re page de la clé</span><span>dernière</span></div></div></div>`;}).join('');
+}
+let timer=null;
+function step(n){for(let i=0;i<n;i++){if(lanes[0].rows>=MAXR){stop();break;}lanes.forEach(insert);}renderLanes();}
+function stop(){clearInterval(timer);timer=null;$('#simPlay').textContent='Lancer';}
+$('#simPlay').onclick=()=>{if(timer){stop();return;}if(lanes[0].rows>=MAXR){resetSim();}$('#simPlay').textContent='Pause';timer=setInterval(()=>step(1),reduce?200:45);};
+$('#simOne').onclick=()=>step(1);
+$('#simFifty').onclick=()=>step(50);
+$('#simReset').onclick=()=>{stop();rnd=Math.random;resetSim();renderLanes();};
+resetSim();for(let i=0;i<180;i++)lanes.forEach(insert);lanes.forEach(l=>l.flash.clear());renderLanes();
+
+/* clé dans les index */
+const KT={pk:'guid',nIx:3,N:1e9};
+function renderKeytrip(){
+  const pkB=KT.pk==='guid'?16:4,full=20+16+7;
+  const strip=(lab,parts)=>`<div class="krow"><span>${lab}</span><div class="bar">${parts.map(([w,c,t])=>`<i style="width:${w/full*100}%;background:${c}">${t}</i>`).join('')}</div></div>`;
+  let rows=strip('Table (clé)',[[pkB,`var(${KT.pk==='guid'?'--c-guid':'--c-int'})`,`PK ${pkB} o`]]);
+  for(let i=1;i<=KT.nIx;i++)rows+=strip(`Index ${i}`,[[20,'var(--c-str)','colonne 20 o'],[pkB,`var(${KT.pk==='guid'?'--c-guid':'--c-int'})`,`PK ${pkB} o`],[7,'var(--c-over)','']]);
+  const copies=KT.nIx+1,totInt=4*KT.N*copies,totGuid=16*KT.N*copies;
+  const per=b=>Math.floor(8096/(20+b+7+2));
+  rows+=`<p class="krow-note">Une page d'index de 8 Ko contient environ <b>${per(4)}</b> entrées avec une clé int, <b>${per(16)}</b> avec un GUID. Pour ${fmtN(KT.N)} lignes, chaque index occupe ${fmtN(Math.ceil(KT.N/per(4)))} pages dans le premier cas, ${fmtN(Math.ceil(KT.N/per(16)))} dans le second.</p>`;
+  $('#ktLbl').textContent=KT.nIx;
+  $$('#ktSeg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pk===KT.pk));
+  $('#ktRows').innerHTML=rows;
+  $('#ktTxt').innerHTML=`Pour ${fmtN(KT.N)} lignes, la clé est stockée ${copies} fois : <b>${fmtB(totInt)}</b> avec un int, <b>${fmtB(totGuid)}</b> avec un GUID, soit <b>${fmtB(totGuid-totInt)}</b> de différence, sans compter les niveaux intermédiaires des arbres.`;
+}
+$('#keytrip').innerHTML=`<div class="toolbar"><div class="seg" id="ktSeg"><button data-pk="int">Clé int</button><button data-pk="guid">Clé uniqueidentifier</button></div>
+  <div class="range" style="min-width:200px;flex:1"><label for="ktIx">Index secondaires <b id="ktLbl"></b></label><input type="range" id="ktIx" min="0" max="8" value="${KT.nIx}"></div></div>
+  <div id="ktRows" style="display:grid;gap:8px"></div><p class="verdict" id="ktTxt"></p>`;
+$$('#ktSeg button').forEach(b=>b.onclick=()=>{KT.pk=b.dataset.pk;renderKeytrip();});
+$('#ktIx').oninput=e=>{KT.nIx=+e.target.value;renderKeytrip();};
+renderKeytrip();
+
+/* démonstration de recherche par email */
+const LK=[
+ {em:'alice.martin@mail.fr',nom:'Martin',ville:'Niort',id:1042,g:'6F9619FF-8B86-D011-B42D-00C04FC964FF'},
+ {em:'bruno.leroy@mail.fr',nom:'Leroy',ville:'Poitiers',id:17,g:'3F2504E0-4F89-11D3-9A0C-0305E82C3301'},
+ {em:'chloe.petit@mail.fr',nom:'Petit',ville:'La Rochelle',id:5300,g:'A1B2C3D4-0F1E-4A5B-9C8D-7E6F5A4B3C2D'},
+ {em:'david.roux@mail.fr',nom:'Roux',ville:'Saintes',id:233,g:'D4E5F6A7-1B2C-4D3E-8F9A-0B1C2D3E4F50'},
+ {em:'emma.faure@mail.fr',nom:'Faure',ville:'Parthenay',id:871,g:'0C9D8E7F-6A5B-4C3D-B2E1-F0A9B8C7D6E5'},
+];
+const LKS={pk:'int',sel:null,step:0,timers:[]};
+function lkKey(r){return LKS.pk==='int'?String(r.id):r.g;}
+function renderLookup(){
+  const kc=LKS.pk==='int'?'var(--c-int)':'var(--c-guid)',kb=LKS.pk==='int'?4:16;
+  const tbl=[...LK].sort((a,b)=>LKS.pk==='int'?a.id-b.id:cmpKey(sqlKey(a.g),sqlKey(b.g)));
+  const s=LKS.step,sel=LKS.sel;
+  $('#lookup').style.setProperty('--kc',kc);
+  $('#lookup').innerHTML=`<div class="lk-panel"><h4>Index secondaire sur email</h4><span class="hint">trié par email · clé recopiée : ${kb} o par entrée</span>
+  <div class="tw"><table><thead><tr><th>email</th><th>clé primaire</th></tr></thead><tbody>${LK.map(r=>`<tr class="${sel===r.id&&s>=1?'on':''}"><td><button class="em" data-id="${r.id}">${r.em}</button></td><td class="key${sel===r.id&&s>=2?' on':''}">${lkKey(r)}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="lk-arrow"><b>→</b>la clé sert<br>d'adresse</div>
+  <div class="lk-panel"><h4>Table Client</h4><span class="hint">triée par clé primaire · ligne complète</span>
+  <div class="tw"><table><thead><tr><th>clé primaire</th><th>nom</th><th>ville</th><th>email</th></tr></thead><tbody>${tbl.map(r=>`<tr class="${sel===r.id&&s>=3?'on':''}"><td class="key">${lkKey(r)}</td><td>${r.nom}</td><td>${r.ville}</td><td>${r.em}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $$('#lkSteps li').forEach(li=>li.classList.toggle('on',+li.dataset.s===s));
+  $$('#lookup button.em').forEach(b=>b.onclick=()=>{LKS.timers.forEach(clearTimeout);LKS.sel=+b.dataset.id;LKS.step=1;renderLookup();
+    const d=reduce?0:700;LKS.timers=[setTimeout(()=>{LKS.step=2;renderLookup();},d),setTimeout(()=>{LKS.step=3;renderLookup();},2*d)];});
+}
+$$('#lkSeg button').forEach(b=>b.onclick=()=>{$$('#lkSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));LKS.pk=b.dataset.pk;renderLookup();});
+LKS.sel=1042;LKS.step=3;renderLookup();
+
+/* tri des GUID */
+let grnd=mulberry(7);
+function genGuid(){let h='';for(let i=0;i<32;i++)h+=Math.floor(grnd()*16).toString(16).toUpperCase();return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
+function sqlKey(g){const h=g.replace(/-/g,'');const b=[];for(let i=0;i<32;i+=2)b.push(parseInt(h.substr(i,2),16));const net=[b[3],b[2],b[1],b[0],b[5],b[4],b[7],b[6],...b.slice(8)];return [10,11,12,13,14,15,8,9,6,7,4,5,0,1,2,3].map(i=>net[i]);}
+function cmpKey(a,b){for(let i=0;i<16;i++){if(a[i]!==b[i])return a[i]-b[i];}return 0;}
+function gfmt(g){const p=g.split('-');return `${p[0]}-${p[1]}-${p[2]}-<span class="gD">${p[3]}</span>-<span class="gE">${p[4]}</span>`;}
+function renderGuids(){
+  // GUID dont les premiers caractères croissent, pour que l'écart avec l'ordre SQL Server saute aux yeux
+  const gs=[];for(let i=0;i<7;i++){const g=genGuid();gs.push(i.toString(16).toUpperCase()+g.slice(1));}
+  const txt=[...gs].sort();const sql=[...gs].sort((a,b)=>cmpKey(sqlKey(a),sqlKey(b)));
+  $('#guids').innerHTML=`<div><h3>Ordre alphabétique</h3><ol>${txt.map(g=>`<li>${gfmt(g)}</li>`).join('')}</ol></div><div><h3>Ordre de l'index SQL Server</h3><ol>${sql.map(g=>`<li>${gfmt(g)}</li>`).join('')}</ol></div>`;
+}
+$('#guidGen').onclick=()=>{grnd=Math.random;renderGuids();};
+renderGuids();
+
+/* ---------- 03 : tri ---------- */
+const SO={N:5e6,mem:64};
+const rngSortN=$('#rngSortN');
+function renderSort(){
+  if(!R.A||!R.B)return;
+  SO.N=Math.round(Math.pow(10,+rngSortN.value));$('#lblSortN').textContent=fmtN(SO.N);
+  const GB=1024**3,work=SO.mem*GB*0.75,cap=work*0.25;
+  const vals=['A','B'].map(v=>{const r=R[v];const est=SO.N*r.est,act=SO.N*r.row,res=Math.min(est,cap);const conc=res>0?Math.floor(work/res):0;return {v,est,act,res,conc,capped:est>cap,spill:act>res};});
+  const mx=Math.max(...vals.map(x=>Math.max(x.est,x.act)),1);
+  $('#sortgrid').innerHTML=vals.map(x=>{
+    let pill,why;
+    if(!S[x.v].length){return `<div class="card"><h3>Version ${x.v}</h3><p class="hint">Aucune colonne.</p></div>`;}
+    if(x.spill){pill='<span class="pill bad">Tri sur disque (tempdb)</span>';why=x.capped?'La réservation est plafonnée à 25 % de la mémoire d\'exécution : le tri ne tient pas et écrit dans tempdb.':'L\'estimation est plus petite que les données réelles (colonnes variables remplies à plus de la moitié) : le tri déborde dans tempdb.';}
+    else if(x.est>x.act*1.5){pill='<span class="pill warn">Réservation '+nf1.format(x.est/x.act)+' fois trop grande</span>';why='La mémoire réservée et inutilisée n\'est pas disponible pour les autres requêtes.';}
+    else{pill='<span class="pill ok">Réservation ajustée</span>';why='L\'estimation est proche des données réelles.';}
+    const slots=Math.min(x.conc,120);
+    return `<div class="card" style="display:grid;gap:12px"><div class="ver-head"><h3>Version ${x.v}</h3>${pill}</div>
+    <div class="mbar"><div class="lab"><span>Mémoire réservée (estimation : ${R[x.v].est} o par ligne)</span><b>${fmtB(x.res)}</b></div><div class="track"><i style="width:${x.res/mx*100}%;background:var(--c-guid)"></i></div></div>
+    <div class="mbar"><div class="lab"><span>Données réellement triées (${R[x.v].row} o par ligne)</span><b>${fmtB(x.act)}</b></div><div class="track"><i style="width:${x.act/mx*100}%;background:var(--accent)"></i></div></div>
+    <p class="hint">${why}</p>
+    <div style="display:grid;gap:6px"><span class="hint">Tris identiques possibles en même temps</span><span class="big">${x.conc>9999?'plus de 9 999':nf.format(x.conc)}</span><div class="slots" aria-hidden="true">${'<i></i>'.repeat(slots)}${x.conc>120?'<span class="hint">…</span>':''}</div></div></div>`;
+  }).join('');
+}
+rngSortN.oninput=renderSort;
+$$('#memSeg button').forEach(b=>b.onclick=()=>{$$('#memSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));SO.mem=+b.dataset.mem;renderSort();});
+
+/* ---------- 04 : téléphone ---------- */
+function e164(s){let t=s.replace(/[^\d+]/g,'');if(t.startsWith('00'))t='+'+t.slice(2);if(/^0\d{9}$/.test(t))t='+33'+t.slice(1);return t;}
+const PH=[
+ {t:'char(255)',fam:'str',val:s=>s+'␣ × '+(255-s.length),disk:s=>255,est:()=>255,note:s=>'Complété par des espaces jusqu\'à 255 caractères.'},
+ {t:'nchar(255)',fam:'str',val:s=>s+'␣ × '+(255-s.length),disk:()=>510,est:()=>510,note:()=>'Unicode et longueur fixe : le pire des deux.'},
+ {t:'nvarchar(max)',fam:'str',val:s=>s,disk:s=>2*s.length+2,est:()=>4002,note:()=>'Estimé à 4 000 octets pour chaque tri, non indexable en clé.'},
+ {t:'nvarchar(255)',fam:'str',val:s=>s,disk:s=>2*s.length+2,est:()=>257,note:()=>'Le choix « par défaut » des ORM : 2 octets par caractère.'},
+ {t:'varchar(255)',fam:'str',val:s=>s,disk:s=>s.length+2,est:()=>130,note:()=>'Même taille disque que varchar(20), mais estimation gonflée.'},
+ {t:'varchar(20)',fam:'str',val:s=>s,disk:s=>s.length+2,est:()=>12,note:s=>s.length>20?'Trop long : erreur « String or binary data would be truncated ».':'Correct, mais formats libres : espaces, points, tirets.',bad:s=>s.length>20},
+ {t:'varchar(16) au format E.164',fam:'str',val:s=>e164(s),disk:s=>e164(s).length+2,est:()=>10,note:()=>'Une seule écriture par numéro, comparable et indexable.',good:true},
+ {t:'bigint',fam:'int',val:s=>{const d=s.replace(/\D/g,'');return d?String(BigInt(d.slice(0,18))):'NULL';},disk:()=>8,est:()=>8,note:s=>/^\s*(\+|0)/.test(s)?'Perd le + ou le 0 initial : le numéro n\'est plus restituable.':'Compact, mais un numéro n\'est pas un nombre.',bad:s=>/^\s*(\+|0)/.test(s)},
+];
+function renderPhone(){
+  const s=$('#phoneIn').value;const mxD=Math.max(...PH.map(p=>p.disk(s))),mxE=Math.max(...PH.map(p=>p.est(s)));
+  $('#phoneTbl').innerHTML=`<thead><tr><th>Type</th><th>Valeur stockée</th><th>Disque</th><th style="min-width:110px"></th><th>Estimation tri</th><th style="min-width:110px"></th><th>1 Md de lignes</th><th>Remarque</th></tr></thead><tbody>${PH.map(p=>{const d=p.disk(s),e=p.est(s);return `<tr><td class="mono" style="white-space:nowrap">${p.t}</td><td class="mono" style="white-space:nowrap">${esc(p.val(s))}</td><td class="num">${d} o</td><td><div class="hb" style="--fam:var(--c-${p.fam==='int'?'int':'str'});width:${d/mxD*100}%"></div></td><td class="num">${e} o</td><td><div class="hb" style="--fam:var(--c-guid);width:${e/mxE*100}%"></div></td><td class="num">${fmtB(d*1e9)}</td><td style="min-width:240px">${p.bad&&p.bad(s)?'<span class="pill bad">Problème</span> ':p.good?'<span class="pill ok">Recommandé</span> ':''}${esc(p.note(s))}</td></tr>`;}).join('')}</tbody>`;
+}
+$('#phoneIn').oninput=renderPhone;renderPhone();
+
+/* ---------- 05 : dates ---------- */
+const DT={'date':3,'time(0)':3,'time(7)':5,'smalldatetime':4,'datetime':8,'datetime2(0)':6,'datetime2(3)':7,'datetime2(7)':8,'datetimeoffset(0)':8,'datetimeoffset(7)':10,'varchar(19)':21};
+const NEEDS=[
+ {id:'naiss',t:'Date de naissance',ex:'1987-04-12',ideal:['date'],ok:{'smalldatetime':'Stocke une heure sans objet, plage limitée à 1900-2079.','datetime':'5 octets de trop pour une heure sans objet.','datetime2(0)':'Stocke une heure sans objet.','datetime2(3)':'Stocke une heure sans objet.','datetime2(7)':'Stocke une heure sans objet.','datetimeoffset(0)':'Heure et fuseau sans objet.','datetimeoffset(7)':'Heure et fuseau sans objet.'},bad:{'time(0)':'Ne stocke aucune date.','time(7)':'Ne stocke aucune date.'}},
+ {id:'ouv',t:'Heure d\'ouverture d\'un magasin',ex:'09:30',ideal:['time(0)'],ok:{'time(7)':'Précision à 100 ns inutile, 2 octets de plus.','smalldatetime':'Une date fictive 1900-01-01 à ignorer.','datetime':'Une date fictive 1900-01-01 à ignorer, 8 octets.','datetime2(0)':'Une date fictive à ignorer.','datetime2(3)':'Une date fictive à ignorer.','datetime2(7)':'Une date fictive à ignorer.'},bad:{'date':'Perd l\'heure.','datetimeoffset(0)':'Date fictive et fuseau : l\'heure locale du magasin devient ambiguë.','datetimeoffset(7)':'Date fictive et fuseau : l\'heure locale du magasin devient ambiguë.'}},
+ {id:'paie',t:'Horodatage d\'un paiement à la milliseconde',ex:'2026-10-09 14:37:05.128',ideal:['datetime2(3)'],ok:{'datetime2(7)':'Précision 100 ns, 1 octet de plus.','datetimeoffset(7)':'Utile seulement si le fuseau d\'origine doit être conservé.'},bad:{'datetime':'Arrondi à 3,33 ms : .128 devient .127, .999 passe à la seconde suivante.','smalldatetime':'Arrondi à la minute.','datetime2(0)':'Perd les millisecondes.','datetimeoffset(0)':'Perd les millisecondes.','date':'Perd l\'heure.','time(0)':'Perd la date et les millisecondes.','time(7)':'Perd la date.'}},
+ {id:'rdv',t:'Rendez-vous international avec son fuseau',ex:'2026-11-03 10:00 +09:00',ideal:['datetimeoffset(0)'],ok:{'datetimeoffset(7)':'Précision inutile pour un rendez-vous.','datetime2(0)':'Possible si tout est stocké en UTC, le fuseau d\'origine est perdu.','datetime2(3)':'Possible en UTC, le fuseau d\'origine est perdu.','datetime2(7)':'Possible en UTC, le fuseau d\'origine est perdu.'},bad:{'datetime':'Perd le fuseau horaire.','smalldatetime':'Perd le fuseau horaire.','date':'Perd l\'heure et le fuseau.','time(0)':'Perd la date et le fuseau.','time(7)':'Perd la date et le fuseau.'}},
+ {id:'maj',t:'Dernière modification, à la seconde',ex:'2026-10-09 14:37:05',ideal:['datetime2(0)'],ok:{'smalldatetime':'4 octets mais arrondi à la minute et plage limitée à 2079.','datetime':'8 octets, 2 de plus que datetime2(0).','datetime2(3)':'Précision inutile, 1 octet de plus.','datetime2(7)':'Précision inutile, 2 octets de plus.','datetimeoffset(0)':'Fuseau inutile si la convention est UTC.','datetimeoffset(7)':'Fuseau et précision inutiles.'},bad:{'date':'Perd l\'heure.','time(0)':'Perd la date.','time(7)':'Perd la date.'}},
+];
+let answers={},selDt=null;
+function verdict(n,t){if(t==='varchar(19)')return {v:'bad',note:'Aucune validation : « 2026-02-31 » est accepté, et chaque comparaison convertit.'};if(n.ideal.includes(t))return {v:'ideal',note:'Le type exact du besoin, au plus petit coût.'};if(n.ok[t])return {v:'ok',note:n.ok[t]};return {v:'bad',note:n.bad[t]||'Ne correspond pas au besoin.'};}
+function renderDtPal(){$('#dtpal').innerHTML=Object.keys(DT).map(t=>`<button class="chip ${t==='varchar(19)'?'f-str':'f-date'}${selDt===t?' sel':''}" data-dt="${t}">${t}<span class="sz">${DT[t]} o</span></button>`).join('');}
+function renderNeeds(){
+  let ideal=0;
+  $('#needs').innerHTML=NEEDS.map(n=>{const t=answers[n.id];let res='',cls='';
+    if(t){const r=verdict(n,t);cls=' v-'+r.v;if(r.v==='ideal')ideal++;const lab={ideal:['ok','Idéal'],ok:['warn','Fonctionne'],bad:['bad','Inadapté']}[r.v];const diff=(DT[t]-8)*1e9;
+      res=`<div class="res"><span><span class="pill ${lab[0]}">${lab[1]}</span> <span class="mono">${DT[t]} o</span></span><span>${esc(r.note)}</span><span class="hint">Sur 1 Md de lignes : ${fmtB(DT[t]*1e9)}${t!=='datetime'?`, soit ${diff<0?fmtB(-diff)+' de moins':fmtB(diff)+' de plus'} qu'avec datetime`:''}.</span></div>`;}
+    return `<div class="card need${cls}"><h3>${n.t}</h3><span class="ex">${esc(n.ex)}</span><button class="slot${t?' filled':''}" data-drop="slot" data-need="${n.id}">${t?`<span class="chip ${t==='varchar(19)'?'f-str':'f-date'}" style="cursor:pointer">${t}</span>`:selDt?'Placer '+selDt+' ici':'Déposer un type ici'}</button>${res}</div>`;}).join('');
+  $('#dtScore').textContent=`Idéal : ${ideal} / ${NEEDS.length}`;
+  $$('#needs .slot').forEach(s=>s.onclick=()=>{if(selDt){answers[s.dataset.need]=selDt;renderNeeds();}else if(answers[s.dataset.need]){delete answers[s.dataset.need];renderNeeds();}});
+}
+$('#dtSolve').onclick=()=>{NEEDS.forEach(n=>answers[n.id]=n.ideal[0]);renderNeeds();};
+$('#dtClear').onclick=()=>{answers={};selDt=null;renderDtPal();renderNeeds();};
+renderDtPal();renderNeeds();
+
+/* précision */
+let precT='datetime2';
+function bytesFor(t,p){const b=p<=2?0:p<=4?1:2;if(t==='time')return 3+b;if(t==='datetime2')return 6+b;return 8+b;}
+function renderPrec(){
+  const p=+$('#rngPrec').value;$('#lblPrec').textContent=p;
+  const frac='1234567'.slice(0,p);const base=precT==='time'?'14:37:05':'2026-10-09 14:37:05';
+  const unit=['1 s','100 ms','10 ms','1 ms','100 µs','10 µs','1 µs','100 ns'][p];
+  $('#precOut').innerHTML=`${precT}(${p}) <span class="muted">→</span> ${base}${p?`.<span class="frac">${frac}</span>`:''}${precT==='datetimeoffset'?' +02:00':''}`;
+  $('#precStats').innerHTML=[['Taille',bytesFor(precT,p)+' o'],['Résolution',unit],['Comparé à datetime (8 o)',(bytesFor(precT,p)-8>0?'+':'')+(bytesFor(precT,p)-8)+' o']].map(([a,b])=>`<div><dt>${a}</dt><dd>${b}</dd></div>`).join('');
+}
+$$('#precType button').forEach(b=>b.onclick=()=>{$$('#precType button').forEach(x=>x.setAttribute('aria-pressed',x===b));precT=b.dataset.t;renderPrec();});
+$('#rngPrec').oninput=renderPrec;renderPrec();
+
+/* arrondi datetime */
+function renderRound(){
+  const ms=+$('#rngMs').value;const m3=String(ms).padStart(3,'0');$('#lblMs').textContent='.'+m3;
+  const t=Math.round(ms*0.3);let out,next=false;
+  if(t>=300){out='2027-01-01 00:00:00.000';next=true;}else out='2026-12-31 23:59:59.'+String(Math.round(t*10/3)).padStart(3,'0');
+  $('#roundOut').innerHTML=`<div><p class="hint">Valeur saisie</p><p class="v">2026-12-31 23:59:59.${m3}</p></div>
+  <div><p class="hint">Stockée en datetime</p><p class="v${next?' bad':''}">${out}</p>${next?'<p class="hint" style="color:var(--bad)">Le 31 décembre est devenu le 1er janvier.</p>':''}</div>
+  <div><p class="hint">Stockée en datetime2(3)</p><p class="v">2026-12-31 23:59:59.${m3}</p></div>`;
+}
+$('#rngMs').oninput=renderRound;renderRound();
+
+/* ---------- 04 : Unicode ---------- */
+const CP1252X=new Set([0x20AC,0x201A,0x0192,0x201E,0x2026,0x2020,0x2021,0x02C6,0x2030,0x0160,0x2039,0x0152,0x017D,0x2018,0x2019,0x201C,0x201D,0x2022,0x2013,0x2014,0x02DC,0x2122,0x0161,0x203A,0x0153,0x017E,0x0178]);
+const in1252=cp=>cp<0x80||(cp>=0xA0&&cp<=0xFF)||CP1252X.has(cp);
+const enc=new TextEncoder();
+function renderUni(){
+  const chars=[...$('#uniIn').value];
+  const show=c=>c===' '?'␣':esc(c);
+  const rows=[
+    {t:'varchar (collation Windows-1252)',f:c=>{const ok=in1252(c.codePointAt(0));return {b:1,ch:ok?c:'?',cls:ok?'':'lost'};}},
+    {t:'nvarchar (Unicode UTF-16)',f:c=>{const b=c.codePointAt(0)>0xFFFF?4:2;return {b,ch:c,cls:'w2'};}},
+    {t:'varchar avec collation _UTF8 (SQL Server 2019+)',f:c=>{const b=enc.encode(c).length;return {b,ch:c,cls:b===1?'':b===2?'w2':'w3'};}},
+  ];
+  $('#uniOut').innerHTML=rows.map(r=>{
+    const cells=chars.map(r.f);const tot=cells.reduce((a,x)=>a+x.b,0);const lost=cells.filter(x=>x.cls==='lost').length;
+    return `<div class="urow"><div class="lab"><span class="mono">${r.t}</span><span><b>${tot} o</b> pour ${chars.length} caractère${chars.length>1?'s':''}${lost?` · <span class="pill bad">${lost} caractère${lost>1?'s':''} perdu${lost>1?'s':''}, remplacé${lost>1?'s':''} par ?</span>`:''}</span></div>
+    <div class="utiles">${cells.map(x=>`<span class="${x.cls}">${show(x.ch)}<small>${x.b} o</small></span>`).join('')}</div></div>`;
+  }).join('');
+}
+$('#uniIn').oninput=renderUni;
+$$('#uniPresets button').forEach(b=>b.onclick=()=>{$('#uniIn').value=b.dataset.u;renderUni();});
+renderUni();
+
+/* ---------- 07 : sargable ---------- */
+const NAMES=['Adam','Agathe','Alice','Amandine','Arthur','Baptiste','Bruno','Camille','Chloé','Clément','David','Diane','Élise','Emma','Fabien','Gaspard','Hugo','Inès','Jade','Jules','Kevin','Léa','Lucas','Manon','Marc','Marie','Marin','Marion','Martin','Martine','Mathis','Nathan','Noé','Océane','Omar','Paul','Quentin','Raphaël','Romane','Sarah','Tamara','Théo','Ugo','Valentin','Victor','William','Yanis','Zoé'];
+const DATES=[];for(let y=2021;y<=2026;y++)for(let k=0;k<8;k++)DATES.push(`${y}-${String(1+Math.floor(k*1.5)).padStart(2,'0')}-${String(3+k*3).padStart(2,'0')}`);
+const AMTS=Array.from({length:48},(_,i)=>2+2*i);
+const PHONES=Array.from({length:48},(_,i)=>'06'+String(10000000+i*1873451).slice(0,8));
+const SGX=[
+ {id:'year',lab:'Une année',data:DATES,fmt:v=>v,bad:"WHERE YEAR(date_commande) = 2025",good:"WHERE date_commande >= '2025-01-01'\n  AND date_commande <  '2026-01-01'",mb:v=>v.startsWith('2025'),mg:v=>v.startsWith('2025'),
+  why:"<b>Pourquoi :</b> pour évaluer YEAR(date_commande), SQL Server doit d'abord calculer l'année de chaque ligne. Il lit donc tout l'index. Avec deux bornes, la colonne est comparée telle quelle : SQL Server saute directement au 1er janvier 2025 et s'arrête au premier jour de 2026. Même résultat, une fraction des lectures. La borne de fin en « &lt; 2026-01-01 » évite aussi le piège du 23:59:59.999 vu en section 06. Piège fréquent avec un ORM : en LINQ, <code>.Where(c =&gt; c.DateCommande.Year == 2025)</code> génère exactement ce calcul non sargable."},
+ {id:'like',lab:'Un début de texte',data:NAMES,fmt:v=>v,bad:"WHERE prenom LIKE '%mar%'",good:"WHERE prenom LIKE 'Mar%'",mb:v=>v.toLowerCase().includes('mar'),mg:v=>v.toLowerCase().startsWith('mar'),
+  why:"<b>Pourquoi :</b> un % au début signifie « n'importe quoi avant » : impossible de savoir où commencer dans l'annuaire, il faut tout lire. Avec 'Mar%', SQL Server ouvre l'annuaire à « Mar » et s'arrête après le dernier. Attention, les deux requêtes ne répondent pas à la même question (Omar et Tamara ne sortent qu'à gauche) : pour une vraie recherche « contient » sur de gros volumes, il faut un index plein texte."},
+ {id:'calc',lab:'Un calcul',data:AMTS,fmt:v=>v+' €',bad:"WHERE montant + 10 > 100",good:"WHERE montant > 90",mb:v=>v+10>100,mg:v=>v>90,
+  why:"<b>Pourquoi :</b> SQL Server ne résout pas l'équation à la place du développeur. Avec « montant + 10 », il calcule le résultat pour chaque ligne. En passant le calcul de l'autre côté du signe, la colonne reste seule et l'index trié par montant permet de sauter directement à 90 €."},
+ {id:'conv',lab:'Un type différent',data:PHONES,fmt:v=>v,bad:"-- colonne telephone en varchar\nWHERE telephone = @tel  -- @tel en nvarchar",good:"-- colonne telephone en varchar\nWHERE telephone = @tel  -- @tel en varchar(16)",mb:v=>v===PHONES[29],mg:v=>v===PHONES[29],
+  why:"<b>Pourquoi :</b> quand le paramètre et la colonne n'ont pas le même type, SQL Server convertit la colonne pour pouvoir comparer : c'est une conversion implicite, invisible dans le code. Selon la collation, cela va d'une recherche moins efficace à la lecture complète de l'index. Cas classique : un ORM qui envoie toutes les chaînes en nvarchar alors que la colonne est en varchar. D'où l'intérêt de déclarer partout les mêmes types : dans EF Core, configurer la colonne avec <code>IsUnicode(false)</code> ; avec Dapper, passer la valeur en <code>DbString</code> avec <code>IsAnsi = true</code>."},
+];
+let sgCur=SGX[0],sgTimer=null;
+$('#sgSeg').innerHTML=SGX.map((x,i)=>`<button data-i="${i}" aria-pressed="${i===0}">${x.lab}</button>`).join('');
+$$('#sgSeg button').forEach(b=>b.onclick=()=>{$$('#sgSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));sgCur=SGX[+b.dataset.i];sgBuild();sgRun(true);});
+function sgBuild(){
+  const x=sgCur;
+  const panel=(k,title,pill,code)=>`<div class="card sg-panel"><div class="ver-head"><h3>${title}</h3>${pill}</div><pre class="sg-code">${esc(code)}</pre>
+    <div class="tiles" id="tl${k}">${x.data.map(v=>`<span title="${esc(x.fmt(v))}">${esc(x.fmt(v))}</span>`).join('')}</div>
+    <div class="sg-count"><span class="hint" id="lab${k}"></span><span class="big" id="cnt${k}"></span></div></div>`;
+  $('#sgGrid').innerHTML=panel('B','Pas sargable','<span class="pill bad">Lecture complète (scan)</span>',x.bad)+panel('G','Sargable','<span class="pill ok">Accès direct (seek)</span>',x.good);
+  $('#sgWhy').innerHTML=x.why;
+}
+function sgRun(anim){
+  clearInterval(sgTimer);
+  const x=sgCur,n=x.data.length;
+  const badSeq=x.data.map((_,i)=>i);
+  const gIdx=x.data.map((v,i)=>x.mg(v)?i:-1).filter(i=>i>=0);
+  const goodSeq=[...gIdx];const last=gIdx[gIdx.length-1];if(last+1<n)goodSeq.push(last+1);
+  const tB=$$('#tlB span'),tG=$$('#tlG span');
+  tB.concat(tG).forEach(t=>t.className='');
+  if(gIdx.length)tG[gIdx[0]].classList.add('jump');
+  const apply=(tiles,seq,k,match,upto)=>{
+    for(let i=0;i<upto&&i<seq.length;i++){const j=seq[i];tiles[j].classList.add(match(x.data[j])?'hit':'read');}
+    const read=Math.min(upto,seq.length);
+    $('#cnt'+k).textContent=`${read} / ${n}`;
+    $('#lab'+k).textContent='entrées lues';
+  };
+  if(!anim||reduce){apply(tB,badSeq,'B',x.mb,n);apply(tG,goodSeq,'G',x.mg,n);return;}
+  let step=0;
+  sgTimer=setInterval(()=>{step++;
+    tB.concat(tG).forEach(t=>t.classList.remove('read','hit'));
+    apply(tB,badSeq,'B',x.mb,step);apply(tG,goodSeq,'G',x.mg,step);
+    if(step>=n)clearInterval(sgTimer);
+  },55);
+}
+$('#sgPlay').onclick=()=>sgRun(true);
+sgBuild();sgRun(false);
+
+/* ---------- 06 : mémo ---------- */
+const MEMO=[
+ ['bit','1 bit','0 ou 1','Jusqu\'à 8 colonnes bit partagent un octet.'],
+ ['tinyint','1','0 à 255','Statuts, codes courts.'],
+ ['smallint','2','±32 767',''],
+ ['int','4','±2,1 milliards','Clé par défaut.'],
+ ['bigint','8','±9,2 × 10¹⁸','Quand l\'int risque d\'être épuisé.'],
+ ['decimal(p,s)','5 / 9 / 13 / 17','p ≤ 9 / 19 / 28 / 38','Montants exacts. float est approximatif.'],
+ ['uniqueidentifier','16','GUID','Préférer NEWSEQUENTIALID() s\'il est clé clusterisée.'],
+ ['char(n) / nchar(n)','n / 2n','fixe','Seulement pour des longueurs vraiment fixes.'],
+ ['varchar(n) / nvarchar(n)','lg+2 / 2lg+2','n ≤ 8 000 / 4 000','n pèse sur les estimations mémoire.'],
+ ['(max)','lg+2, hors ligne au-delà de 8 000','2 Go','Estimé à 4 000 o, pas de clé d\'index.'],
+ ['date','3','0001 à 9999, au jour',''],
+ ['time(p)','3 à 5','100 ns au mieux',''],
+ ['smalldatetime','4','1900 à 2079, à la minute','Attention à la borne 2079.'],
+ ['datetime','8','1753 à 9999, 3,33 ms','Arrondi .000 / .003 / .007.'],
+ ['datetime2(p)','6 à 8','0001 à 9999, 100 ns','datetime2(0) : 6 o, à la seconde.'],
+ ['datetimeoffset(p)','8 à 10','avec fuseau',''],
+];
+$('#memoTbl').innerHTML=`<thead><tr><th>Type</th><th>Octets</th><th>Plage ou précision</th><th>À retenir</th></tr></thead><tbody>${MEMO.map(r=>`<tr><td class="mono">${r[0]}</td><td class="num">${r[1]}</td><td>${r[2]}</td><td class="muted">${r[3]}</td></tr>`).join('')}</tbody>`;
+
+/* init */
+syncN();loadPreset('client');
+})();
+</script>
+</body>
+</html>
