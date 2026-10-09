@@ -212,15 +212,22 @@ section.sec{padding-block:48px 8px;border-top:1px solid var(--line);display:grid
 .tips{margin:0;padding-left:20px;display:grid;gap:8px;max-width:76ch;font-size:15px}
 .tips b{color:var(--ink)}
 .fw-card{display:grid;gap:14px}
-.fw-pages{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.fw-page{display:grid;gap:6px;min-width:0}
-.fw-h{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.fw-pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+.fw-page{display:grid;gap:4px;min-width:0}
+.fw-h{display:flex;justify-content:space-between;gap:6px;font-size:12px;color:var(--muted)}
 .fw-h b{color:var(--ink)}
-.fw-box{display:flex;flex-direction:column;gap:2px;padding:4px;border:1.5px solid var(--line);border-radius:5px;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--line) 70%,transparent) 6px 7px);overflow:hidden}
-.fw-row{flex:none;display:flex;align-items:center;padding:0 8px;border-radius:3px;background:color-mix(in srgb,var(--c-str) 30%,var(--surface));font:12px var(--f-mono);overflow:hidden;white-space:nowrap;transition:background .2s,outline-color .2s;outline:2px solid transparent;outline-offset:-1px}
-.fw-row.moved{background:color-mix(in srgb,var(--c-guid) 35%,var(--surface))}
-.fw-row.stub{background:var(--surface);border:1.5px dashed var(--c-guid);color:var(--c-guid);font-size:11px}
-.fw-row.on{outline-color:var(--ink);background:var(--accent);color:var(--accent-ink)}
+.fw-box{display:flex;flex-direction:column;gap:1px;padding:3px;border:1.5px solid var(--line);border-radius:5px;background:repeating-linear-gradient(135deg,transparent 0 6px,color-mix(in srgb,var(--line) 70%,transparent) 6px 7px);overflow:hidden;transition:border-color .2s}
+.fw-page.reading .fw-box{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.fw-page.newp .fw-h b{color:var(--c-guid)}
+.fw-row{flex:none;display:flex;align-items:center;padding:0 5px;border-radius:2px;background:color-mix(in srgb,var(--c-str) 32%,var(--surface));font:9px/1 var(--f-mono);color:var(--ink);overflow:hidden;white-space:nowrap;transition:background .15s}
+.fw-row.moved{background:color-mix(in srgb,var(--c-guid) 40%,var(--surface))}
+.fw-row.stub{background:repeating-linear-gradient(90deg,var(--c-guid) 0 5px,transparent 5px 8px);border-radius:0}
+.fw-row.fresh{animation:flash 1s ease-out}
+.fw-row.on{background:var(--accent);color:var(--accent-ink)}
+.fw-row.stub.on{background:var(--ink)}
+.fw-stats{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13px;color:var(--muted)}
+.fw-stats b{color:var(--ink);font:600 15px var(--f-mono);font-variant-numeric:tabular-nums}
+.fw-stats .hot b{color:var(--c-guid)}
 .disk{display:grid;gap:6px}
 .icons{display:flex;flex-wrap:wrap;gap:3px;min-height:16px}
 .icons i{width:11px;height:14px;border-radius:2px;background:var(--accent);opacity:.8}
@@ -471,7 +478,9 @@ footer{padding-top:32px;font-size:13px;color:var(--muted);max-width:80ch}
     <p>Une table créée sans clé primaire, ou avec une clé primaire déclarée <code>NONCLUSTERED</code>, n'est rangée dans aucun ordre : SQL Server pose chaque nouvelle ligne là où il reste de la place. On appelle ce rangement un <b>tas</b> (<i>heap</i> en anglais). On en croise souvent dans les tables de logs, d'import ou de travail.</p>
     <p class="enclair"><b>En clair :</b> dans un tas, quand une ligne grossit lors d'un UPDATE (un commentaire rempli après coup, un texte qui passe de 10 à 2 000 caractères) et ne tient plus dans sa page, SQL Server la déménage dans une autre page. Les index secondaires connaissent encore l'ancienne adresse : il laisse donc à sa place une <b>adresse de réexpédition</b>, comme un suivi de courrier après un déménagement. Les DBA parlent de <b>forwarded record</b>. Chaque lecture qui passe par l'ancienne adresse fait ensuite un détour.</p>
     <div class="card fw-card">
-      <div class="toolbar"><button class="btn primary" id="fwdUp">Allonger le commentaire d'un client</button><button class="btn" id="fwdRead">Lire toute la table</button><button class="btn" id="fwdReset">Réinitialiser</button></div>
+      <div class="toolbar"><button class="btn primary" id="fwdUp1">Mettre à jour 1 client</button><button class="btn primary" id="fwdUp10">Mettre à jour 10 clients</button><button class="btn" id="fwdRead">Lire toute la table</button><button class="btn" id="fwdReset">Réinitialiser</button></div>
+      <p class="hint">Chaque mise à jour remplit le commentaire d'un client : sa ligne passe d'environ 400 à 1 900 octets. Chaque petit rectangle est un client, sa hauteur suit sa taille. Vert : client à sa place. Rouge : client déménagé. Pointillés rouges : adresse de réexpédition laissée à l'ancienne place. Survoler un rectangle pour le détail.</p>
+      <div class="fw-stats" id="fwdStats"></div>
       <div class="fw-pages" id="fwdPages"></div>
       <p class="verdict" id="fwdLog"></p>
     </div>
@@ -913,36 +922,62 @@ $('#simRebuild').onclick=()=>{stop();rebuildSim();renderLanes();};
 resetSim();for(let i=0;i<60;i++)lanes.forEach(insert);lanes.forEach(l=>l.flash.clear());renderLanes();
 
 /* lignes qui déménagent dans un tas */
-const FW0=[{id:1,b:1100},{id:2,b:1300},{id:3,b:1000},{id:4,b:1250},{id:5,b:1150},{id:6,b:1200}];
-const FWU=[3,5,1];
-const FWD={p1:[],p2:[],n:0,log:'',timer:null};
-function fwdReset(){clearInterval(FWD.timer);FWD.p1=FW0.map(r=>({...r}));FWD.p2=[];FWD.n=0;FWD.log='Six clients tiennent dans la page 1. Il reste un peu de place libre (zone hachurée).';renderFwd();}
+const FWD={pages:[],timer:null,total:0,reads:null,log:'',fresh:new Set(),rnd:mulberry(5)};
+const pageUsed=rows=>rows.reduce((a,r)=>a+r.b+2,96);
+function fwdReset(){
+  clearTimeout(FWD.timer);const r=mulberry(11);let id=1;FWD.pages=[];FWD.rnd=mulberry(5);
+  for(let p=0;p<4;p++){const rows=[];while(true){const b=300+Math.floor(r()*170);if(pageUsed(rows)+b+2>8096-150)break;rows.push({id:id++,b});}FWD.pages.push(rows);}
+  FWD.total=id-1;FWD.reads=null;FWD.fresh=new Set();
+  FWD.log=`La table contient ${FWD.total} clients, rangés dans 4 pages presque pleines. Pour la lire en entier, SQL Server lit 4 pages.`;
+  renderFwd();
+}
+function fwdCounts(){const pages=FWD.pages.length;let moved=0;FWD.pages.forEach(rows=>rows.forEach(r=>{if(r.fwd)moved++;}));return {pages,moved};}
 function renderFwd(){
-  const H=300,px=b=>Math.max(20,b/8096*H);
-  const page=(no,rows)=>{const used=rows.reduce((a,r)=>a+r.b,0);return `<div class="fw-page"><div class="fw-h"><b>Page ${no}</b><span>${nf.format(used)} / 8 096 o utilisés</span></div><div class="fw-box" style="height:${H}px">${rows.map(r=>`<div class="fw-row${r.fwd?' stub':''}${r.moved?' moved':''}" data-k="${no}-${r.id}" style="height:${px(r.b)}px">${r.fwd?`client ${r.id} : voir page 2`:`client ${r.id} · ${nf.format(r.b)} o`}</div>`).join('')}</div></div>`;};
-  $('#fwdPages').innerHTML=page(1,FWD.p1)+page(2,FWD.p2);
+  const H=300;
+  $('#fwdPages').innerHTML=FWD.pages.map((rows,pi)=>{const stubs=rows.filter(r=>r.fwd).length,avail=H-8-rows.length-stubs*5,k=Math.min(1,avail/(H*(8096-96)/8096)),px=r=>r.fwd?5:Math.max(3,r.b/8096*H*k);return `<div class="fw-page${pi>=4?' newp':''}" data-p="${pi}"><div class="fw-h"><b>Page ${pi+1}</b><span>${Math.round(pageUsed(rows)/8096*100)} %</span></div><div class="fw-box" style="height:${H}px">${rows.map(r=>`<div class="fw-row${r.fwd?' stub':''}${r.moved?' moved':''}${FWD.fresh.has(r.id)?' fresh':''}" data-k="${pi}-${r.id}" style="height:${px(r)}px" title="${r.fwd?`Client ${r.id} : adresse de réexpédition vers la page ${r.to+1}`:`Client ${r.id} : ${nf.format(r.b)} o${r.moved?', déménagé ici':''}`}">${!r.fwd&&px(r)>=10?'#'+r.id:''}</div>`).join('')}</div></div>`;}).join('');
+  const c=fwdCounts();
+  $('#fwdStats').innerHTML=`<span>Clients <b>${FWD.total}</b></span><span class="${c.moved?'hot':''}">Clients déménagés <b>${c.moved}</b></span><span>Pages <b>${c.pages}</b></span><span class="${c.moved?'hot':''}">Lectures pour toute la table <b>${c.pages+c.moved}</b></span>${FWD.reads!==null?`<span>Lecture en cours <b>${FWD.reads}</b></span>`:''}`;
   $('#fwdLog').innerHTML=FWD.log;
 }
-$('#fwdUp').onclick=()=>{
-  clearInterval(FWD.timer);
-  if(FWD.n>=FWU.length){FWD.log='Tous les exemples sont passés : « Lire toute la table » pour voir le coût, ou « Réinitialiser ».';renderFwd();return;}
-  const id=FWU[FWD.n++],add=2500,i=FWD.p1.findIndex(r=>r.id===id),r=FWD.p1[i],used=FWD.p1.reduce((a,x)=>a+x.b,0);
-  if(used+add<=8096){r.b+=add;FWD.log=`Le client ${id} grossit de ${nf.format(add)} o et tient encore dans sa page.`;}
-  else{FWD.p1[i]={id,b:9,fwd:true};FWD.p2.push({id,b:r.b+add,moved:true});
-    FWD.log=`Le commentaire du client ${id} passe sa ligne à <b>${nf.format(r.b+add)} o</b> : elle ne tient plus dans la page 1. SQL Server la déménage en page 2 et laisse à sa place une <b>adresse de réexpédition</b> de 9 octets (cadre pointillé).`;}
+function fwdUpdate(n){
+  clearTimeout(FWD.timer);FWD.reads=null;FWD.fresh=new Set();
+  const cand=[];FWD.pages.forEach((rows,pi)=>rows.forEach((r,ri)=>{if(!r.fwd&&!r.moved)cand.push([pi,r.id]);}));
+  if(!cand.length){FWD.log='Tous les clients ont déjà déménagé. « Réinitialiser » pour recommencer.';renderFwd();return;}
+  let done=0;
+  for(let k=0;k<n&&cand.length;k++){
+    const [pi,id]=cand.splice(Math.floor(FWD.rnd()*cand.length),1)[0];
+    const rows=FWD.pages[pi],ri=rows.findIndex(r=>r.id===id),r=rows[ri],nb=r.b+1500;
+    if(pageUsed(rows)+1500<=8096){r.b=nb;FWD.fresh.add(id);continue;}
+    let to=FWD.pages.findIndex(rs=>pageUsed(rs)+nb+2<=8096);
+    if(to<0){FWD.pages.push([]);to=FWD.pages.length-1;}
+    rows[ri]={id,b:9,fwd:true,to};FWD.pages[to].push({id,b:nb,moved:true});FWD.fresh.add(id);done++;
+  }
+  const c=fwdCounts();
+  FWD.log=`${done>1?done+' clients mis à jour : leurs lignes':'1 client mis à jour : sa ligne'} ne tien${done>1?'nent':'t'} plus dans leur page. SQL Server les déménage dans des pages qui ont de la place, ajoutées en fin de table (en rouge), et laisse à chaque fois une adresse de réexpédition (trait pointillé). La table compte maintenant ${c.pages} pages, et sa lecture complète demande ${c.pages+c.moved} lectures.`;
   renderFwd();
-};
-$('#fwdRead').onclick=()=>{
-  clearInterval(FWD.timer);
-  const seq=[];let jumps=0;
-  FWD.p1.forEach(r=>{seq.push('1-'+r.id);if(r.fwd){seq.push('2-'+r.id);seq.push('1-'+r.id);jumps++;}});
-  FWD.p2.forEach(r=>{if(!r.moved)seq.push('2-'+r.id);});
-  const base=FWD.p2.length?2:1,total=base+jumps;
-  const done=()=>{$$('#fwdPages .fw-row').forEach(e=>e.classList.remove('on'));FWD.log=jumps?`Lecture terminée : <b>${total} lectures de page</b> au lieu de ${base}. Chaque adresse de réexpédition oblige à faire un aller-retour vers la page 2. Sur une vraie table, avec des milliers de lignes déplacées, ces détours se comptent en milliers de lectures en plus.`:`Lecture terminée : <b>${total} lecture${total>1?'s':''} de page</b>, sans aucun détour.`;$('#fwdLog').innerHTML=FWD.log;};
-  if(reduce){done();return;}
-  let i=0;$('#fwdLog').innerHTML='Lecture en cours…';
-  FWD.timer=setInterval(()=>{$$('#fwdPages .fw-row').forEach(e=>e.classList.remove('on'));if(i>=seq.length){clearInterval(FWD.timer);done();return;}const el=$(`#fwdPages [data-k="${seq[i]}"]`);if(el)el.classList.add('on');i++;},450);
-};
+}
+function fwdRead(){
+  clearTimeout(FWD.timer);FWD.fresh=new Set();
+  const seq=[];FWD.pages.forEach((rows,pi)=>{rows.forEach((r,ri)=>{if(r.moved)return;seq.push({pi,id:r.id,first:ri===rows.findIndex(x=>!x.moved)});if(r.fwd)seq.push({pi:r.to,id:r.id,jump:true});});});
+  const c=fwdCounts();FWD.reads=0;FWD.log='Lecture en cours : SQL Server parcourt les pages dans l\'ordre et suit chaque adresse de réexpédition.';renderFwd();
+  let i=0;
+  const clear=()=>{$$('#fwdPages .fw-row.on').forEach(e=>e.classList.remove('on'));$$('#fwdPages .fw-page.reading').forEach(e=>e.classList.remove('reading'));};
+  const tick=()=>{
+    clear();
+    if(i>=seq.length){const raw=FWD.pages.reduce((a,rows)=>a+rows.filter(r=>!r.fwd).reduce((x,r)=>x+r.b+2,0),0),ideal=Math.ceil(raw/(8096-96));FWD.reads=null;
+      FWD.log=c.moved?`Lecture terminée : <b>${c.pages+c.moved} lectures de page</b>, dont ${c.moved} détours par une adresse de réexpédition. Rangés proprement, les mêmes clients tiendraient dans environ ${ideal} pages.`:`Lecture terminée : <b>${c.pages} lectures de page</b>, sans aucun détour.`;renderFwd();return;}
+    const st=seq[i++];if(st.first||st.jump)FWD.reads++;
+    const el=$(`#fwdPages [data-k="${st.pi}-${st.id}"]`);if(el)el.classList.add('on');
+    const pg=$(`#fwdPages .fw-page[data-p="${st.pi}"]`);if(pg)pg.classList.add('reading');
+    const sp=$('#fwdStats span:last-child b');if(sp)sp.textContent=FWD.reads;
+    const next=seq[i];FWD.timer=setTimeout(tick,st.jump||(next&&next.jump)?230:40);
+  };
+  if(reduce){i=seq.length;tick();return;}
+  tick();
+}
+$('#fwdUp1').onclick=()=>fwdUpdate(1);
+$('#fwdUp10').onclick=()=>fwdUpdate(10);
+$('#fwdRead').onclick=fwdRead;
 $('#fwdReset').onclick=fwdReset;
 fwdReset();
 
