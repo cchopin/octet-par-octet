@@ -74,6 +74,7 @@ nav.toc a:hover{color:var(--ink);background:var(--surface)}
 .eq .t b{font:800 clamp(1.5rem,4vw,2.3rem)/1 var(--f-disp);font-stretch:115%;font-variant-numeric:tabular-nums}
 .eq .t span{font:500 12px var(--f-mono);color:var(--muted)}
 .eq .op{align-self:center;font:700 1.6rem var(--f-disp);color:var(--muted)}
+.eq .op.paren{font-size:3.4rem;font-weight:400;line-height:1;margin-inline:-4px}
 .eq .t.res{background:var(--c-guid);border-color:var(--c-guid)}
 .eq .t.res b,.eq .t.res span{color:#fff}
 .eq .t.g b{color:var(--c-guid)} .eq .t.i b{color:var(--c-int)}
@@ -351,9 +352,11 @@ footer{padding-top:32px;font-size:13px;color:var(--muted);max-width:80ch}
   <h1>Un octet de trop, un milliard de fois</h1>
   <p class="lede">Choisir un type, c'est choisir combien de lignes tiennent dans une page de 8 Ko, combien de pages il faut lire, et combien de mémoire une requête réserve. Exemple avec la clé primaire d'une table d'un milliard de lignes.</p>
   <div class="eq" aria-label="16 octets moins 4 octets, multiplié par un milliard de lignes, égale 11,2 Go par index">
+    <div class="op paren">(</div>
     <div class="t g"><b>16 o</b><span>uniqueidentifier</span></div>
     <div class="op">−</div>
     <div class="t i"><b>4 o</b><span>int</span></div>
+    <div class="op paren">)</div>
     <div class="op">×</div>
     <div class="t"><b>1 000 000 000</b><span>lignes</span></div>
     <div class="op">=</div>
